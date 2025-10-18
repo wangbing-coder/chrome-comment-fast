@@ -1,10 +1,17 @@
+type ArticleStructure = {
+  mainTitle?: string
+  keyPoints?: string
+  introduction?: string
+  hasCode?: string
+}
+
 type GenerateCommentRequest = {
   type: "GENERATE_COMMENT"
   payload: {
     title: string
     url: string
     contentSnippet: string
-    language?: string
+    structure: ArticleStructure
   }
 }
 
@@ -18,6 +25,56 @@ type OpenRouterResponse = {
   }>
 }
 
+const buildSmartPrompt = (
+  title: string,
+  contentSnippet: string,
+  structure: ArticleStructure,
+  commentLength: string
+): string => {
+  const lengthGuide =
+    commentLength === "short"
+      ? "Keep it very brief (30-50 words or equivalent characters)"
+      : commentLength === "medium"
+        ? "Keep it moderate length (50-100 words or equivalent characters)"
+        : "Keep it comprehensive but concise (100-150 words or equivalent characters)"
+
+  let prompt = `You are writing a thoughtful comment on a blog post.\n\n`
+
+  prompt += `IMPORTANT: Analyze the language used in the article content below, and write your comment in THE EXACT SAME LANGUAGE.\n`
+  prompt += `For example: If the article is in French, write in French. If in Spanish, write in Spanish. If in German, write in German.\n\n`
+
+  prompt += `Article Title: "${title}"\n\n`
+
+  if (structure.keyPoints) {
+    prompt += `Key Topics Discussed: ${structure.keyPoints}\n\n`
+  }
+
+  if (structure.introduction) {
+    prompt += `Article Introduction:\n${structure.introduction.slice(0, 300)}\n\n`
+  }
+
+  if (structure.hasCode === "yes") {
+    prompt += `Note: This is a technical article with code examples.\n\n`
+  }
+
+  prompt += `Article Content Excerpt:\n${contentSnippet.slice(0, 500)}\n\n`
+
+  prompt += `Write a comment that:\n`
+  prompt += `1. Is written in the SAME LANGUAGE as the article content\n`
+  prompt += `2. Shows you actually read the article by referencing specific points\n`
+  prompt += `3. Adds value through insight, question, or related experience\n`
+  prompt += `4. Sounds natural and genuine, not generic or AI-generated\n`
+  prompt += `5. Is polite and constructive\n`
+  prompt += `6. ${lengthGuide}\n\n`
+  prompt += `Do NOT:\n`
+  prompt += `- Start with generic phrases like "Great post!" or "Nice article!"\n`
+  prompt += `- Write in English if the article is in another language\n`
+  prompt += `- Sound like spam or promotional content\n\n`
+  prompt += `Jump straight into substantive content.`
+
+  return prompt
+}
+
 chrome.runtime.onMessage.addListener((message: BackgroundMessage, _sender, sendResponse) => {
   if (message?.type !== "GENERATE_COMMENT") {
     return
@@ -25,9 +82,13 @@ chrome.runtime.onMessage.addListener((message: BackgroundMessage, _sender, sendR
 
   ;(async () => {
     try {
-      const { title, url, contentSnippet, language } = message.payload
+      const { title, url, contentSnippet, structure } = message.payload
 
-      const { aiApiKey, aiModel } = await chrome.storage.sync.get(["aiApiKey", "aiModel"])
+      const { aiApiKey, aiModel, commentLength } = await chrome.storage.sync.get([
+        "aiApiKey",
+        "aiModel",
+        "commentLength"
+      ])
 
       if (!aiApiKey) {
         sendResponse({ success: false, error: "Missing API Key in settings" })
@@ -39,7 +100,9 @@ chrome.runtime.onMessage.addListener((message: BackgroundMessage, _sender, sendR
         return
       }
 
-      const promptLanguage = language ?? "English"
+      const lengthSetting = commentLength || "medium"
+
+      const userPrompt = buildSmartPrompt(title, contentSnippet, structure, lengthSetting)
 
       const body = {
         model: aiModel,
@@ -47,15 +110,15 @@ chrome.runtime.onMessage.addListener((message: BackgroundMessage, _sender, sendR
           {
             role: "system",
             content:
-              "You are a friendly and professional blog reader. Please write a concise, valuable, and sincere comment based on the given content. Keep it under 80 Chinese characters or 120 English characters."
+              "You are an experienced blog reader who writes insightful, substantive comments. Your comments reference specific content from the article and add genuine value through your perspective or questions."
           },
           {
             role: "user",
-            content: `Please reply in ${promptLanguage} to the following blog post:\nTitle: ${title}\nURL: ${url}\nContent: ${contentSnippet}`
+            content: userPrompt
           }
         ],
-        max_tokens: 200,
-        temperature: 0.8
+        max_tokens: lengthSetting === "short" ? 150 : lengthSetting === "medium" ? 250 : 350,
+        temperature: 0.7
       }
 
       const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {

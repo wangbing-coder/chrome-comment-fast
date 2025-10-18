@@ -31,7 +31,31 @@ const extractContentSnippet = () => {
 
   const snippet = texts.join(" ").replace(/\s+/g, " ")
 
-  return snippet.slice(0, 1000)
+  return snippet.slice(0, 2000)
+}
+
+const extractArticleStructure = () => {
+  const structure: Record<string, string> = {}
+
+  const h1 = document.querySelector("h1")
+  if (h1) structure.mainTitle = h1.textContent?.trim() || ""
+
+  const headings = Array.from(document.querySelectorAll("h2, h3")).slice(0, 5)
+  structure.keyPoints = headings.map((h) => h.textContent?.trim() || "").filter(Boolean).join("; ")
+
+  const firstParagraphs = Array.from(document.querySelectorAll("article p, .post-content p, .content p, p"))
+    .slice(0, 3)
+    .map((p) => p.textContent?.trim())
+    .filter(Boolean)
+    .join(" ")
+    .slice(0, 500)
+
+  structure.introduction = firstParagraphs
+
+  const codeBlocks = document.querySelectorAll("pre, code").length
+  structure.hasCode = codeBlocks > 0 ? "yes" : "no"
+
+  return structure
 }
 
 chrome.runtime.onMessage.addListener((message: ContentMessage, _sender, sendResponse) => {
@@ -42,13 +66,15 @@ chrome.runtime.onMessage.addListener((message: ContentMessage, _sender, sendResp
   const title = document.title || ""
   const url = window.location.href
   const contentSnippet = extractContentSnippet()
+  const structure = extractArticleStructure()
 
   sendResponse({
     success: true,
     payload: {
       title,
       url,
-      contentSnippet
+      contentSnippet,
+      structure
     }
   })
 })

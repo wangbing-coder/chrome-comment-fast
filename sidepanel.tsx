@@ -119,21 +119,40 @@ const successStyle: React.CSSProperties = {
   fontSize: 12
 }
 
+type DomainInfo = {
+  domain: string
+  description: string
+  markdown: string
+  linkText: string
+  addedAt: number
+}
+
 const SidePanel = () => {
   const [activeTab, setActiveTab] = useState<TabType>("home")
   const [apiKey, setApiKey] = useState("")
   const [model, setModel] = useState("anthropic/claude-3-haiku-20240307")
+  const [commentLength, setCommentLength] = useState("medium")
   const [comment, setComment] = useState("")
   const [status, setStatus] = useState<GenerationStatus>("idle")
   const [error, setError] = useState<string | null>(null)
-  const [language, setLanguage] = useState("English")
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
+  const [domains, setDomains] = useState<DomainInfo[]>([])
+  const [showAddDomain, setShowAddDomain] = useState(false)
+  const [newDomain, setNewDomain] = useState("")
+  const [domainLoading, setDomainLoading] = useState(false)
 
   useEffect(() => {
     void (async () => {
-      const { aiApiKey, aiModel } = await chrome.storage.sync.get(["aiApiKey", "aiModel"])
+      const { aiApiKey, aiModel, commentLength: savedLength, userDomains } = await chrome.storage.sync.get([
+        "aiApiKey",
+        "aiModel",
+        "commentLength",
+        "userDomains"
+      ])
       if (aiApiKey) setApiKey(aiApiKey)
       if (aiModel) setModel(aiModel)
+      if (savedLength) setCommentLength(savedLength)
+      if (userDomains) setDomains(userDomains)
     })()
   }, [])
 
@@ -160,10 +179,14 @@ const SidePanel = () => {
       return
     }
 
-    await chrome.storage.sync.set({ aiApiKey: apiKey.trim(), aiModel: model.trim() })
+    await chrome.storage.sync.set({
+      aiApiKey: apiKey.trim(),
+      aiModel: model.trim(),
+      commentLength: commentLength
+    })
     setSaveMessage("Settings saved successfully")
     setTimeout(() => setSaveMessage(null), 3000)
-  }, [apiKey, model])
+  }, [apiKey, model, commentLength])
 
   const handleGenerate = useCallback(async () => {
     if (!apiKey.trim() || !model.trim()) {
@@ -191,10 +214,7 @@ const SidePanel = () => {
 
       const response = await chrome.runtime.sendMessage({
         type: "GENERATE_COMMENT",
-        payload: {
-          ...pageContext.payload,
-          language
-        }
+        payload: pageContext.payload
       })
 
       if (!response?.success) {
@@ -208,13 +228,87 @@ const SidePanel = () => {
       setError(message)
       setStatus("error")
     }
-  }, [apiKey, model, language])
+  }, [apiKey, model])
+
+  const [copyStatus, setCopyStatus] = useState<string>("")
 
   const handleCopyComment = useCallback(() => {
     if (comment) {
       navigator.clipboard.writeText(comment)
+      setCopyStatus("Copied!")
+      setTimeout(() => setCopyStatus(""), 2000)
     }
   }, [comment])
+
+  const handleAddDomain = useCallback(async () => {
+    if (!newDomain.trim()) {
+      setError("Please enter a domain")
+      return
+    }
+
+    let url = newDomain.trim()
+    if (!url.startsWith("http://") && !url.startsWith("https://")) {
+      url = "https://" + url
+    }
+
+    setDomainLoading(true)
+    setError(null)
+
+    try {
+      const urlObj = new URL(url)
+      const domain = urlObj.hostname
+
+      if (domains.some((d) => d.domain === domain)) {
+        setError("Domain already exists")
+        setDomainLoading(false)
+        return
+      }
+
+      const response = await fetch(url)
+      const html = await response.text()
+
+      const parser = new DOMParser()
+      const doc = parser.parseFromString(html, "text/html")
+
+      const metaDesc =
+        doc.querySelector('meta[name="description"]')?.getAttribute("content") ||
+        doc.querySelector('meta[property="og:description"]')?.getAttribute("content") ||
+        ""
+
+      const title = doc.querySelector("title")?.textContent || domain
+      const markdown = `[${title}](${url})`
+      const linkText = title
+
+      const domainInfo: DomainInfo = {
+        domain,
+        description: metaDesc,
+        markdown,
+        linkText,
+        addedAt: Date.now()
+      }
+
+      const updatedDomains = [...domains, domainInfo]
+      setDomains(updatedDomains)
+      await chrome.storage.sync.set({ userDomains: updatedDomains })
+
+      setNewDomain("")
+      setShowAddDomain(false)
+      setDomainLoading(false)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      setError(`Failed to fetch domain info: ${message}`)
+      setDomainLoading(false)
+    }
+  }, [newDomain, domains])
+
+  const handleRemoveDomain = useCallback(
+    async (domain: string) => {
+      const updatedDomains = domains.filter((d) => d.domain !== domain)
+      setDomains(updatedDomains)
+      await chrome.storage.sync.set({ userDomains: updatedDomains })
+    },
+    [domains]
+  )
 
   return (
     <div style={containerStyle}>
@@ -241,20 +335,6 @@ const SidePanel = () => {
           </header>
 
           <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <label style={labelStyle}>
-              <span>Comment Language</span>
-              <select
-                style={inputStyle}
-                value={language}
-                onChange={(event) => setLanguage(event.target.value)}>
-                <option value="English">English</option>
-                <option value="简体中文">简体中文</option>
-                <option value="繁體中文">繁體中文</option>
-                <option value="日本語">日本語</option>
-                <option value="한국어">한국어</option>
-              </select>
-            </label>
-
             <button
               style={isGenerating ? disabledButtonStyle : buttonStyle}
               disabled={isGenerating}
@@ -269,14 +349,130 @@ const SidePanel = () => {
             <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <span style={{ fontSize: 13, color: "#64748b", fontWeight: 500 }}>Generated Comment</span>
               <p style={cardStyle}>{comment}</p>
-              <button style={secondaryButtonStyle} onClick={handleCopyComment}>
-                Copy to Clipboard
+              <button
+                style={{
+                  ...secondaryButtonStyle,
+                  backgroundColor: copyStatus ? "#10b981" : "#f1f5f9",
+                  color: copyStatus ? "white" : "#334155",
+                  borderColor: copyStatus ? "#10b981" : "#cbd5e1",
+                  transition: "all 0.3s ease"
+                }}
+                onClick={handleCopyComment}>
+                {copyStatus || "Copy to Clipboard"}
               </button>
             </section>
           ) : null}
 
+          <section style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 20 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: 14, fontWeight: 600 }}>My Domains</span>
+              <button
+                style={{
+                  backgroundColor: "#10b981",
+                  color: "white",
+                  border: "none",
+                  borderRadius: 20,
+                  width: 32,
+                  height: 32,
+                  fontSize: 18,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center"
+                }}
+                onClick={() => setShowAddDomain(true)}>
+                +
+              </button>
+            </div>
+
+            {showAddDomain && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <input
+                  style={inputStyle}
+                  type="text"
+                  placeholder="example.com or https://example.com"
+                  value={newDomain}
+                  onChange={(e) => setNewDomain(e.target.value)}
+                />
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    style={{ ...buttonStyle, flex: 1 }}
+                    disabled={domainLoading}
+                    onClick={handleAddDomain}>
+                    {domainLoading ? "Adding..." : "Add Domain"}
+                  </button>
+                  <button
+                    style={{ ...secondaryButtonStyle, flex: 1 }}
+                    onClick={() => {
+                      setShowAddDomain(false)
+                      setNewDomain("")
+                    }}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {domains.length > 0 ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {domains.map((d) => (
+                  <div
+                    key={d.domain}
+                    style={{
+                      border: "1px solid #e2e8f0",
+                      borderRadius: 8,
+                      padding: 12,
+                      backgroundColor: "#ffffff"
+                    }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                      <div style={{ flex: 1 }}>
+                        <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "#1f2937" }}>{d.domain}</p>
+                        <p style={{ margin: "4px 0", fontSize: 11, color: "#6b7280" }}>{d.description}</p>
+                        <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
+                          <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                            <span style={{ fontSize: 10, color: "#9ca3af" }}>Markdown:</span>
+                            <code
+                              style={{
+                                fontSize: 10,
+                                backgroundColor: "#f3f4f6",
+                                padding: "2px 6px",
+                                borderRadius: 4,
+                                color: "#374151"
+                              }}>
+                              {d.markdown}
+                            </code>
+                          </div>
+                          <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                            <span style={{ fontSize: 10, color: "#9ca3af" }}>Link text:</span>
+                            <span style={{ fontSize: 10, color: "#374151" }}>{d.linkText}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        style={{
+                          border: "none",
+                          backgroundColor: "transparent",
+                          color: "#ef4444",
+                          cursor: "pointer",
+                          fontSize: 16,
+                          padding: 4
+                        }}
+                        onClick={() => handleRemoveDomain(d.domain)}>
+                        ×
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p style={{ fontSize: 12, color: "#9ca3af", textAlign: "center", margin: "16px 0" }}>
+                No domains added yet. Click + to add your first domain.
+              </p>
+            )}
+          </section>
+
           <footer style={{ marginTop: "auto", paddingTop: 16, fontSize: 11, color: "#94a3b8", textAlign: "center" }}>
-            Ensure the current page allows content script injection
+            AI automatically detects and matches the article's language
           </footer>
         </div>
       ) : (
@@ -317,6 +513,21 @@ const SidePanel = () => {
               />
               <span style={{ fontSize: 11, color: "#64748b" }}>
                 Model identifier (e.g., anthropic/claude-3-haiku-20240307)
+              </span>
+            </label>
+
+            <label style={labelStyle}>
+              <span>Comment Length</span>
+              <select
+                style={inputStyle}
+                value={commentLength}
+                onChange={(event) => setCommentLength(event.target.value)}>
+                <option value="short">Short (30-50 words)</option>
+                <option value="medium">Medium (50-100 words)</option>
+                <option value="long">Long (100-150 words)</option>
+              </select>
+              <span style={{ fontSize: 11, color: "#64748b" }}>
+                Controls the length of generated comments
               </span>
             </label>
 
