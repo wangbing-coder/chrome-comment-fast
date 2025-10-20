@@ -120,10 +120,12 @@ const successStyle: React.CSSProperties = {
 }
 
 type DomainInfo = {
+  name: string
   domain: string
+  fullUrl: string
   description: string
   markdown: string
-  linkText: string
+  htmlLink: string
   addedAt: number
 }
 
@@ -138,8 +140,13 @@ const SidePanel = () => {
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
   const [domains, setDomains] = useState<DomainInfo[]>([])
   const [showAddDomain, setShowAddDomain] = useState(false)
-  const [newDomain, setNewDomain] = useState("")
+  const [newDomainName, setNewDomainName] = useState("")
+  const [newDomainUrl, setNewDomainUrl] = useState("")
+  const [newDomainDesc, setNewDomainDesc] = useState("")
   const [domainLoading, setDomainLoading] = useState(false)
+  const [copyStatus, setCopyStatus] = useState<{[key: string]: string}>({})
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
+  const [showCopyToast, setShowCopyToast] = useState<string>("")
 
   useEffect(() => {
     void (async () => {
@@ -230,23 +237,35 @@ const SidePanel = () => {
     }
   }, [apiKey, model])
 
-  const [copyStatus, setCopyStatus] = useState<string>("")
-
   const handleCopyComment = useCallback(() => {
     if (comment) {
       navigator.clipboard.writeText(comment)
-      setCopyStatus("Copied!")
-      setTimeout(() => setCopyStatus(""), 2000)
+      setCopyStatus(prev => ({ ...prev, comment: "Copied!" }))
+      setTimeout(() => {
+        setCopyStatus(prev => ({ ...prev, comment: "" }))
+      }, 2000)
     }
   }, [comment])
 
+  const handleCopyToClipboard = useCallback((text: string, type: string) => {
+    navigator.clipboard.writeText(text)
+    setShowCopyToast("copied")
+    setTimeout(() => {
+      setShowCopyToast("")
+    }, 1500)
+  }, [])
+
   const handleAddDomain = useCallback(async () => {
-    if (!newDomain.trim()) {
-      setError("Please enter a domain")
+    if (!newDomainName.trim()) {
+      setError("Please enter a name")
+      return
+    }
+    if (!newDomainUrl.trim()) {
+      setError("Please enter a domain URL")
       return
     }
 
-    let url = newDomain.trim()
+    let url = newDomainUrl.trim()
     if (!url.startsWith("http://") && !url.startsWith("https://")) {
       url = "https://" + url
     }
@@ -257,6 +276,7 @@ const SidePanel = () => {
     try {
       const urlObj = new URL(url)
       const domain = urlObj.hostname
+      const name = newDomainName.trim()
 
       if (domains.some((d) => d.domain === domain)) {
         setError("Domain already exists")
@@ -264,26 +284,28 @@ const SidePanel = () => {
         return
       }
 
+      // Fetch description from the website
       const response = await fetch(url)
       const html = await response.text()
 
       const parser = new DOMParser()
       const doc = parser.parseFromString(html, "text/html")
 
-      const metaDesc =
+      const description =
         doc.querySelector('meta[name="description"]')?.getAttribute("content") ||
         doc.querySelector('meta[property="og:description"]')?.getAttribute("content") ||
-        ""
+        `Website: ${domain}`
 
-      const title = doc.querySelector("title")?.textContent || domain
-      const markdown = `[${title}](${url})`
-      const linkText = title
+      const markdown = `[${name}](${url})`
+      const htmlLink = `<a href="${url}">${name}</a>`
 
       const domainInfo: DomainInfo = {
+        name,
         domain,
-        description: metaDesc,
+        fullUrl: url,
+        description,
         markdown,
-        linkText,
+        htmlLink,
         addedAt: Date.now()
       }
 
@@ -291,7 +313,9 @@ const SidePanel = () => {
       setDomains(updatedDomains)
       await chrome.storage.sync.set({ userDomains: updatedDomains })
 
-      setNewDomain("")
+      setNewDomainName("")
+      setNewDomainUrl("")
+      setNewDomainDesc("")
       setShowAddDomain(false)
       setDomainLoading(false)
     } catch (err) {
@@ -299,7 +323,7 @@ const SidePanel = () => {
       setError(`Failed to fetch domain info: ${message}`)
       setDomainLoading(false)
     }
-  }, [newDomain, domains])
+  }, [newDomainName, newDomainUrl, domains])
 
   const handleRemoveDomain = useCallback(
     async (domain: string) => {
@@ -310,8 +334,61 @@ const SidePanel = () => {
     [domains]
   )
 
+  const handleDragStart = useCallback((e: React.DragEvent<HTMLDivElement>, index: number) => {
+    setDraggedIndex(index)
+    e.dataTransfer.effectAllowed = 'move'
+  }, [])
+
+  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+  }, [])
+
+  const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>, dropIndex: number) => {
+    e.preventDefault()
+
+    if (draggedIndex === null || draggedIndex === dropIndex) {
+      setDraggedIndex(null)
+      return
+    }
+
+    const newDomains = [...domains]
+    const [removed] = newDomains.splice(draggedIndex, 1)
+    newDomains.splice(dropIndex, 0, removed)
+
+    setDomains(newDomains)
+    setDraggedIndex(null)
+
+    // Save the new order
+    chrome.storage.sync.set({ userDomains: newDomains })
+  }, [domains, draggedIndex])
+
+  const handleDragEnd = useCallback(() => {
+    setDraggedIndex(null)
+  }, [])
+
   return (
     <div style={containerStyle}>
+      {showCopyToast && (
+        <div style={{
+          position: "absolute",
+          top: "50%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
+          backgroundColor: "rgba(59, 130, 246, 0.9)",
+          color: "white",
+          padding: "10px 16px",
+          borderRadius: 6,
+          fontSize: 12,
+          fontWeight: 500,
+          zIndex: 1000,
+          boxShadow: "0 2px 8px rgba(0, 0, 0, 0.1)",
+          backdropFilter: "blur(2px)",
+          border: "1px solid rgba(255, 255, 255, 0.2)"
+        }}>
+          {showCopyToast}
+        </div>
+      )}
       <div style={tabBarStyle}>
         <button
           style={activeTab === "home" ? activeTabStyle : tabStyle}
@@ -352,13 +429,13 @@ const SidePanel = () => {
               <button
                 style={{
                   ...secondaryButtonStyle,
-                  backgroundColor: copyStatus ? "#10b981" : "#f1f5f9",
-                  color: copyStatus ? "white" : "#334155",
-                  borderColor: copyStatus ? "#10b981" : "#cbd5e1",
+                  backgroundColor: copyStatus.comment ? "#10b981" : "#f1f5f9",
+                  color: copyStatus.comment ? "white" : "#334155",
+                  borderColor: copyStatus.comment ? "#10b981" : "#cbd5e1",
                   transition: "all 0.3s ease"
                 }}
                 onClick={handleCopyComment}>
-                {copyStatus || "Copy to Clipboard"}
+                {copyStatus.comment || "Copy to Clipboard"}
               </button>
             </section>
           ) : null}
@@ -385,14 +462,27 @@ const SidePanel = () => {
               </button>
             </div>
 
+            {domains.length > 1 && (
+              <div style={{ fontSize: 11, color: "#6b7280", textAlign: "center" }}>
+                💡 拖拽域名卡片重新排序
+              </div>
+            )}
+
             {showAddDomain && (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <input
                   style={inputStyle}
                   type="text"
-                  placeholder="example.com or https://example.com"
-                  value={newDomain}
-                  onChange={(e) => setNewDomain(e.target.value)}
+                  placeholder="Name (e.g., attractiveness test)"
+                  value={newDomainName}
+                  onChange={(e) => setNewDomainName(e.target.value)}
+                />
+                <input
+                  style={inputStyle}
+                  type="text"
+                  placeholder="Domain (e.g., attractivenessscale.com)"
+                  value={newDomainUrl}
+                  onChange={(e) => setNewDomainUrl(e.target.value)}
                 />
                 <div style={{ display: "flex", gap: 8 }}>
                   <button
@@ -405,7 +495,9 @@ const SidePanel = () => {
                     style={{ ...secondaryButtonStyle, flex: 1 }}
                     onClick={() => {
                       setShowAddDomain(false)
-                      setNewDomain("")
+                      setNewDomainName("")
+                      setNewDomainUrl("")
+                      setNewDomainDesc("")
                     }}>
                     Cancel
                   </button>
@@ -415,54 +507,170 @@ const SidePanel = () => {
 
             {domains.length > 0 ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {domains.map((d) => (
-                  <div
-                    key={d.domain}
-                    style={{
-                      border: "1px solid #e2e8f0",
-                      borderRadius: 8,
-                      padding: 12,
-                      backgroundColor: "#ffffff"
-                    }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                      <div style={{ flex: 1 }}>
-                        <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "#1f2937" }}>{d.domain}</p>
-                        <p style={{ margin: "4px 0", fontSize: 11, color: "#6b7280" }}>{d.description}</p>
-                        <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
-                          <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-                            <span style={{ fontSize: 10, color: "#9ca3af" }}>Markdown:</span>
-                            <code
-                              style={{
-                                fontSize: 10,
-                                backgroundColor: "#f3f4f6",
-                                padding: "2px 6px",
-                                borderRadius: 4,
-                                color: "#374151"
-                              }}>
-                              {d.markdown}
-                            </code>
+                {domains.map((d, index) => {
+                  const domainKey = `domain-${d.domain}`
+                  const descKey = `desc-${d.domain}`
+                  const htmlKey = `html-${d.domain}`
+                  const mdKey = `md-${d.domain}`
+
+                  return (
+                    <div
+                      key={d.domain}
+                      style={{
+                        border: draggedIndex === index ? "2px solid #3b82f6" : "1px solid #e2e8f0",
+                        borderRadius: 8,
+                        padding: 16,
+                        backgroundColor: "#ffffff",
+                        marginBottom: 12,
+                        cursor: draggedIndex === null ? "default" : "move",
+                        opacity: draggedIndex === index ? 0.8 : 1,
+                        transition: "all 0.2s ease"
+                      }}
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, index)}
+                      onDragOver={handleDragOver}
+                      onDrop={(e) => handleDrop(e, index)}
+                      onDragEnd={handleDragEnd}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                        <div style={{ flex: 1 }}>
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 8,
+                              marginBottom: 6,
+                              cursor: "pointer",
+                              padding: "4px 8px",
+                              borderRadius: 4,
+                              border: "1px solid transparent",
+                              transition: "all 0.2s"
+                            }}
+                            onClick={() => handleCopyToClipboard(d.fullUrl, "Domain")}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = "#f3f4f6"
+                              e.currentTarget.style.borderColor = "#d1d5db"
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = "transparent"
+                              e.currentTarget.style.borderColor = "transparent"
+                            }}>
+                            <span style={{ fontSize: 14, fontWeight: 600, color: "#1f2937" }}>{d.fullUrl}</span>
                           </div>
-                          <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-                            <span style={{ fontSize: 10, color: "#9ca3af" }}>Link text:</span>
-                            <span style={{ fontSize: 10, color: "#374151" }}>{d.linkText}</span>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <span style={{ fontSize: 12, color: "#6b7280", fontWeight: 500 }}>Name:</span>
+                            <div
+                              style={{
+                                backgroundColor: "#f8fafc",
+                                border: "1px solid #e2e8f0",
+                                borderRadius: 4,
+                                padding: "4px 8px",
+                                fontSize: 12,
+                                color: "#374151",
+                                cursor: "pointer",
+                                userSelect: "text",
+                                fontFamily: "monospace"
+                              }}
+                              onClick={() => handleCopyToClipboard(d.name, "Name")}
+                              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#f3f4f6"}
+                              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "#f8fafc"}>
+                              {d.name}
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          style={{
+                            border: "none",
+                            backgroundColor: "transparent",
+                            color: "#ef4444",
+                            cursor: "pointer",
+                            fontSize: 18,
+                            padding: 4,
+                            marginLeft: 12,
+                            borderRadius: 4,
+                            transition: "background-color 0.2s"
+                          }}
+                          onClick={() => handleRemoveDomain(d.domain)}
+                          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#fee2e2"}
+                          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "transparent"}>
+                          ×
+                        </button>
+                      </div>
+
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 8 }}>
+                        <span style={{ fontSize: 11, color: "#6b7280", fontWeight: 500 }}>Description:</span>
+                        <div
+                          style={{
+                            backgroundColor: "#f8fafc",
+                            border: "1px solid #e2e8f0",
+                            borderRadius: 4,
+                            padding: 6,
+                            fontSize: 11,
+                            color: "#374151",
+                            lineHeight: 1.4,
+                            cursor: "pointer",
+                            userSelect: "text"
+                          }}
+                          onClick={() => handleCopyToClipboard(d.description, "Description")}
+                          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#f3f4f6"}
+                          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "#f8fafc"}>
+                          {d.description}
+                        </div>
+                      </div>
+
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                          <label style={{ fontSize: 10, color: "#6b7280", fontWeight: 500 }}>HTML Link:</label>
+                          <div
+                            style={{
+                              backgroundColor: "#f8fafc",
+                              border: "1px solid #e2e8f0",
+                              borderRadius: 4,
+                              padding: 6,
+                              fontSize: 11,
+                              color: "#374151",
+                              fontFamily: "monospace",
+                              wordBreak: "break-all",
+                              cursor: "pointer",
+                              userSelect: "text",
+                              position: "relative"
+                            }}
+                            onClick={() => handleCopyToClipboard(d.htmlLink, "HTML Link")}
+                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#f3f4f6"}
+                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "#f8fafc"}>
+                            <div>
+                              {d.htmlLink}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                          <label style={{ fontSize: 10, color: "#6b7280", fontWeight: 500 }}>Markdown Link:</label>
+                          <div
+                            style={{
+                              backgroundColor: "#f8fafc",
+                              border: "1px solid #e2e8f0",
+                              borderRadius: 4,
+                              padding: 6,
+                              fontSize: 11,
+                              color: "#374151",
+                              fontFamily: "monospace",
+                              wordBreak: "break-all",
+                              cursor: "pointer",
+                              userSelect: "text",
+                              position: "relative"
+                            }}
+                            onClick={() => handleCopyToClipboard(d.markdown, "Markdown Link")}
+                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#f3f4f6"}
+                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "#f8fafc"}>
+                            <div>
+                              {d.markdown}
+                            </div>
                           </div>
                         </div>
                       </div>
-                      <button
-                        style={{
-                          border: "none",
-                          backgroundColor: "transparent",
-                          color: "#ef4444",
-                          cursor: "pointer",
-                          fontSize: 16,
-                          padding: 4
-                        }}
-                        onClick={() => handleRemoveDomain(d.domain)}>
-                        ×
-                      </button>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             ) : (
               <p style={{ fontSize: 12, color: "#9ca3af", textAlign: "center", margin: "16px 0" }}>
@@ -522,9 +730,9 @@ const SidePanel = () => {
                 style={inputStyle}
                 value={commentLength}
                 onChange={(event) => setCommentLength(event.target.value)}>
-                <option value="short">Short (30-50 words)</option>
-                <option value="medium">Medium (50-100 words)</option>
-                <option value="long">Long (100-150 words)</option>
+                <option value="short">Short (20-30 words)</option>
+                <option value="medium">Medium (30-50 words)</option>
+                <option value="long">Long (50-100 words)</option>
               </select>
               <span style={{ fontSize: 11, color: "#64748b" }}>
                 Controls the length of generated comments
@@ -551,10 +759,8 @@ const SidePanel = () => {
               }}>
               <strong>Popular Models:</strong>
               <ul style={{ margin: "6px 0 0 0", paddingLeft: 18 }}>
-                <li>anthropic/claude-3-haiku-20240307</li>
-                <li>anthropic/claude-3-sonnet-20240229</li>
+                <li>google/gemini-2.0-flash-001</li>
                 <li>openai/gpt-4o-mini</li>
-                <li>openai/gpt-4o</li>
               </ul>
             </div>
           </footer>

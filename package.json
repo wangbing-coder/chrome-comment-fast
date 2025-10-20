@@ -1,8 +1,8 @@
 {
   "name": "comment-fast",
-  "displayName": "Comment fast",
+  "displayName": "Comment Fast",
   "version": "0.0.1",
-  "description": "ai comment fast for blog",
+  "description": "Automatically generate high-quality, contextual comments for blog posts.",
   "author": "brice94",
   "scripts": {
     "dev": "plasmo dev",

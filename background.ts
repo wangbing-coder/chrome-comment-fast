@@ -33,10 +33,10 @@ const buildSmartPrompt = (
 ): string => {
   const lengthGuide =
     commentLength === "short"
-      ? "Keep it very brief (30-50 words or equivalent characters)"
+      ? "Keep it very brief (20-30 words or equivalent characters)"
       : commentLength === "medium"
-        ? "Keep it moderate length (50-100 words or equivalent characters)"
-        : "Keep it comprehensive but concise (100-150 words or equivalent characters)"
+        ? "Keep it moderate length (30-50 words or equivalent characters)"
+        : "Keep it comprehensive but concise (50-100 words or equivalent characters)"
 
   let prompt = `You are writing a thoughtful comment on a blog post.\n\n`
 
