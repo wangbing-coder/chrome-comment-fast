@@ -121,27 +121,42 @@ chrome.runtime.onMessage.addListener((message: BackgroundMessage, _sender, sendR
         temperature: 0.7
       }
 
-      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${aiApiKey}`,
-          "HTTP-Referer": "https://comment-fast.example",
-          "X-Title": "Comment Fast"
-        },
-        body: JSON.stringify(body)
-      })
+      let response
+      try {
+        response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${aiApiKey}`,
+            "HTTP-Referer": "https://comment-fast.example",
+            "X-Title": "Comment Fast"
+          },
+          body: JSON.stringify(body)
+        })
+      } catch (fetchError) {
+        console.error("❌ Network error:", fetchError)
+        sendResponse({ success: false, error: `Network error: ${fetchError instanceof Error ? fetchError.message : 'Could not establish connection'}` })
+        return
+      }
 
       if (!response.ok) {
-        const errorText = await response.text()
+        let errorText
+        try {
+          errorText = await response.text()
+        } catch {
+          errorText = `HTTP ${response.status}`
+        }
+        console.error("❌ OpenRouter API error:", response.status, errorText)
         sendResponse({ success: false, error: `OpenRouter error: ${errorText}` })
         return
       }
 
       const data = (await response.json()) as OpenRouterResponse
+
       const comment = data?.choices?.[0]?.message?.content?.trim()
 
       if (!comment) {
+        console.error("❌ No comment received from OpenRouter")
         sendResponse({ success: false, error: "No comment received from OpenRouter" })
         return
       }
@@ -149,6 +164,7 @@ chrome.runtime.onMessage.addListener((message: BackgroundMessage, _sender, sendR
       sendResponse({ success: true, comment })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
+      console.error("❌ Unexpected error:", message)
       sendResponse({ success: false, error: message })
     }
   })()

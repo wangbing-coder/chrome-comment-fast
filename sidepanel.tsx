@@ -195,8 +195,27 @@ const SidePanel = () => {
     setTimeout(() => setSaveMessage(null), 3000)
   }, [apiKey, model, commentLength])
 
+  // Refresh settings from storage after saving
+  const refreshSettings = useCallback(async () => {
+    const { aiApiKey, aiModel, commentLength: savedLength } = await chrome.storage.sync.get([
+      "aiApiKey",
+      "aiModel",
+      "commentLength"
+    ])
+    if (aiApiKey) setApiKey(aiApiKey)
+    if (aiModel) setModel(aiModel)
+    if (savedLength) setCommentLength(savedLength)
+  }, [])
+
   const handleGenerate = useCallback(async () => {
-    if (!apiKey.trim() || !model.trim()) {
+    // Always read from storage to ensure we have the latest settings
+    const { aiApiKey, aiModel, commentLength } = await chrome.storage.sync.get([
+      "aiApiKey",
+      "aiModel",
+      "commentLength"
+    ])
+
+    if (!aiApiKey?.trim() || !aiModel?.trim()) {
       setError("Please configure API Key and Model in Settings")
       return
     }
@@ -211,18 +230,30 @@ const SidePanel = () => {
         throw new Error("Unable to find active tab")
       }
 
-      const pageContext = await chrome.tabs.sendMessage(tab.id, {
-        type: "GET_PAGE_CONTEXT"
-      })
+      let pageContext
+      try {
+        pageContext = await chrome.tabs.sendMessage(tab.id, {
+          type: "GET_PAGE_CONTEXT"
+        })
+      } catch (messageError) {
+        console.error("❌ Content script connection failed:", messageError)
+        throw new Error(`Could not establish connection. Receiving end does not exist. Please refresh the page and try again.`)
+      }
 
       if (!pageContext?.success) {
         throw new Error(pageContext?.error ?? "Failed to get page context")
       }
 
-      const response = await chrome.runtime.sendMessage({
-        type: "GENERATE_COMMENT",
-        payload: pageContext.payload
-      })
+      let response
+      try {
+        response = await chrome.runtime.sendMessage({
+          type: "GENERATE_COMMENT",
+          payload: pageContext.payload
+        })
+      } catch (runtimeError) {
+        console.error("❌ Background script connection failed:", runtimeError)
+        throw new Error(`Could not establish connection. Please refresh the page and try again.`)
+      }
 
       if (!response?.success) {
         throw new Error(response?.error ?? "Failed to generate comment")
@@ -232,10 +263,11 @@ const SidePanel = () => {
       setStatus("success")
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
+      console.error("❌ Generation failed:", message)
       setError(message)
       setStatus("error")
     }
-  }, [apiKey, model])
+  }, [])
 
   const handleCopyComment = useCallback(() => {
     if (comment) {

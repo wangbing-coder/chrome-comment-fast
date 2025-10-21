@@ -63,19 +63,29 @@ chrome.runtime.onMessage.addListener((message: ContentMessage, _sender, sendResp
     return
   }
 
-  const title = document.title || ""
-  const url = window.location.href
-  const contentSnippet = extractContentSnippet()
-  const structure = extractArticleStructure()
+  try {
+    const title = document.title || ""
+    const url = window.location.href
+    const contentSnippet = extractContentSnippet()
+    const structure = extractArticleStructure()
 
-  sendResponse({
-    success: true,
-    payload: {
-      title,
-      url,
-      contentSnippet,
-      structure
+    const response = {
+      success: true,
+      payload: {
+        title,
+        url,
+        contentSnippet,
+        structure
+      }
     }
-  })
+
+    sendResponse(response)
+  } catch (error) {
+    console.error("❌ Error in content script:", error)
+    sendResponse({
+      success: false,
+      error: error instanceof Error ? error.message : String(error)
+    })
+  }
 })
 
