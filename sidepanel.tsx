@@ -147,6 +147,7 @@ const SidePanel = () => {
   const [copyStatus, setCopyStatus] = useState<{[key: string]: string}>({})
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
   const [showCopyToast, setShowCopyToast] = useState<string>("")
+  const [currentDomain, setCurrentDomain] = useState<string>("")
 
   useEffect(() => {
     void (async () => {
@@ -222,12 +223,24 @@ const SidePanel = () => {
 
     setStatus("loading")
     setError(null)
+    setCurrentDomain("") // Clear previous domain
 
     try {
       const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true })
 
       if (!tab?.id) {
         throw new Error("Unable to find active tab")
+      }
+
+      // Extract domain from current tab URL
+      if (tab.url) {
+        try {
+          const url = new URL(tab.url)
+          setCurrentDomain(url.hostname)
+        } catch (urlError) {
+          console.warn("Could not parse domain from URL:", urlError)
+          setCurrentDomain("Unknown")
+        }
       }
 
       let pageContext
@@ -266,6 +279,7 @@ const SidePanel = () => {
       console.error("❌ Generation failed:", message)
       setError(message)
       setStatus("error")
+      setCurrentDomain("") // Clear domain on error
     }
   }, [])
 
@@ -456,19 +470,54 @@ const SidePanel = () => {
 
           {comment ? (
             <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <span style={{ fontSize: 13, color: "#64748b", fontWeight: 500 }}>Generated Comment</span>
-              <p style={cardStyle}>{comment}</p>
-              <button
-                style={{
-                  ...secondaryButtonStyle,
-                  backgroundColor: copyStatus.comment ? "#10b981" : "#f1f5f9",
-                  color: copyStatus.comment ? "white" : "#334155",
-                  borderColor: copyStatus.comment ? "#10b981" : "#cbd5e1",
-                  transition: "all 0.3s ease"
-                }}
-                onClick={handleCopyComment}>
-                {copyStatus.comment || "Copy to Clipboard"}
-              </button>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ fontSize: 13, color: "#64748b", fontWeight: 500 }}>Generated Comment</span>
+                {currentDomain && (
+                  <span style={{
+                    fontSize: 11,
+                    color: "#9ca3af",
+                    fontWeight: 400
+                  }}>for</span>
+                )}
+                {currentDomain && (
+                  <span style={{
+                    fontSize: 11,
+                    fontFamily: "monospace",
+                    color: "#6b7280",
+                    backgroundColor: "#f8fafc",
+                    padding: "1px 5px",
+                    borderRadius: 2,
+                    border: "1px solid #e5e7eb",
+                    cursor: "pointer",
+                    userSelect: "text"
+                  }}
+                  onClick={() => handleCopyToClipboard(currentDomain, "Domain")}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#f3f4f6"}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "#f8fafc"}>
+                    {currentDomain}
+                  </span>
+                )}
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <p style={cardStyle}>{comment}</p>
+                <button
+                  style={{
+                    ...secondaryButtonStyle,
+                    backgroundColor: copyStatus.comment ? "#10b981" : "#f1f5f9",
+                    color: copyStatus.comment ? "white" : "#334155",
+                    borderColor: copyStatus.comment ? "#10b981" : "#cbd5e1",
+                    transition: "all 0.3s ease",
+                    padding: "6px 12px",
+                    fontSize: 11,
+                    height: "auto",
+                    alignSelf: "flex-start",
+                    width: "fit-content"
+                  }}
+                  onClick={handleCopyComment}>
+                  {copyStatus.comment || "Copy to Clipboard"}
+                </button>
+              </div>
             </section>
           ) : null}
 
