@@ -172,4 +172,36 @@ chrome.runtime.onMessage.addListener((message: BackgroundMessage, _sender, sendR
   return true
 })
 
-chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch((error) => console.error(error))
+// Handle extension icon click - toggle floating panel
+chrome.action.onClicked.addListener(async (tab) => {
+  console.log("🔵 Extension icon clicked, tab:", tab.url)
+  
+  if (!tab.id) {
+    console.warn("⚠️ No tab ID available")
+    return
+  }
+
+  try {
+    // Check if page supports content scripts
+    if (tab.url?.startsWith("chrome://") || 
+        tab.url?.startsWith("chrome-extension://") || 
+        tab.url?.startsWith("edge://") ||
+        tab.url?.startsWith("about:") ||
+        tab.url?.startsWith("moz-extension://")) {
+      console.warn("⚠️ Cannot inject floating panel on this page type:", tab.url)
+      return
+    }
+
+    console.log("✅ Page supports content scripts, sending message to toggle panel")
+    
+    // Send message to content script to toggle panel
+    await chrome.tabs.sendMessage(tab.id, {
+      type: "TOGGLE_FLOATING_PANEL"
+    })
+    
+    console.log("✅ Toggle panel message sent successfully")
+  } catch (error) {
+    console.error("❌ Failed to toggle floating panel:", error)
+    console.log("💡 Try refreshing the page and clicking the icon again")
+  }
+})

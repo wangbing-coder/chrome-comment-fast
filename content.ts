@@ -1,8 +1,85 @@
 import type { PlasmoCSConfig } from "plasmo"
+import { createRoot } from "react-dom/client"
+import React from "react"
+import SidePanel from "./components/CommentPanel"
 
 export const config: PlasmoCSConfig = {
   matches: ["<all_urls>"],
   run_at: "document_idle"
+}
+
+const PANEL_ID = "comment-fast-floating-panel"
+const BACKDROP_ID = "comment-fast-floating-backdrop"
+
+const removePanel = () => {
+  const panel = document.getElementById(PANEL_ID)
+  const backdrop = document.getElementById(BACKDROP_ID)
+  
+  if (panel) {
+    const root = (panel as any)._reactRoot
+    if (root) {
+      root.unmount()
+    }
+    panel.remove()
+  }
+  if (backdrop) {
+    backdrop.remove()
+  }
+}
+
+const createFloatingPanel = async () => {
+  // Check if panel already exists
+  if (document.getElementById(PANEL_ID)) {
+    removePanel()
+    return
+  }
+
+  // Create backdrop
+  const backdrop = document.createElement("div")
+  backdrop.id = BACKDROP_ID
+  backdrop.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.2);
+    z-index: 2147483646;
+  `
+  backdrop.addEventListener("click", removePanel)
+
+  // Create container
+  const container = document.createElement("div")
+  container.id = PANEL_ID
+  container.style.cssText = `
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: 400px;
+    height: 100vh;
+    z-index: 2147483647;
+    background: white;
+    box-shadow: -2px 0 8px rgba(0, 0, 0, 0.15);
+    font-family: system-ui, -apple-system, sans-serif;
+    overflow: hidden;
+  `
+
+  document.body.appendChild(backdrop)
+  document.body.appendChild(container)
+
+  // Render React component
+  try {
+    const root = createRoot(container)
+    ;(container as any)._reactRoot = root
+    root.render(React.createElement(SidePanel, { onClose: removePanel }))
+  } catch (error) {
+    console.error("Failed to render React component:", error)
+    container.innerHTML = `
+      <div style="padding: 20px; color: red;">
+        Failed to load panel. Please refresh the page.
+      </div>
+    `
+  }
 }
 
 type GetPageContextRequest = {
@@ -58,34 +135,64 @@ const extractArticleStructure = () => {
   return structure
 }
 
-chrome.runtime.onMessage.addListener((message: ContentMessage, _sender, sendResponse) => {
-  if (message?.type !== "GET_PAGE_CONTEXT") {
-    return
+// Log that content script is loaded
+console.log("✅ Comment Fast content script loaded on:", window.location.href)
+
+// Ensure message listener is set up immediately
+chrome.runtime.onMessage.addListener((message: ContentMessage | { type: "TOGGLE_FLOATING_PANEL" | "PING" }, _sender, sendResponse) => {
+  // Handle ping message (used to check if content script is loaded)
+  if (message?.type === "PING") {
+    sendResponse({ success: true, loaded: true })
+    return true
   }
 
-  try {
-    const title = document.title || ""
-    const url = window.location.href
-    const contentSnippet = extractContentSnippet()
-    const structure = extractArticleStructure()
-
-    const response = {
-      success: true,
-      payload: {
-        title,
-        url,
-        contentSnippet,
-        structure
-      }
+  // Handle toggle panel message
+  if (message?.type === "TOGGLE_FLOATING_PANEL") {
+    try {
+      createFloatingPanel()
+      sendResponse({ success: true })
+    } catch (error) {
+      console.error("❌ Error creating floating panel:", error)
+      sendResponse({ 
+        success: false, 
+        error: error instanceof Error ? error.message : String(error) 
+      })
     }
-
-    sendResponse(response)
-  } catch (error) {
-    console.error("❌ Error in content script:", error)
-    sendResponse({
-      success: false,
-      error: error instanceof Error ? error.message : String(error)
-    })
+    return true
   }
+
+  // Handle get page context message
+  if (message?.type === "GET_PAGE_CONTEXT") {
+    try {
+      const title = document.title || ""
+      const url = window.location.href
+      const contentSnippet = extractContentSnippet()
+      const structure = extractArticleStructure()
+
+      const response = {
+        success: true,
+        payload: {
+          title,
+          url,
+          contentSnippet,
+          structure
+        }
+      }
+
+      sendResponse(response)
+    } catch (error) {
+      console.error("❌ Error in content script:", error)
+      sendResponse({
+        success: false,
+        error: error instanceof Error ? error.message : String(error)
+      })
+    }
+    
+    // Return true to indicate we will send a response asynchronously
+    return true
+  }
+
+  // Unknown message type
+  return false
 })
 

@@ -5,12 +5,13 @@ type TabType = "home" | "settings"
 
 const containerStyle: React.CSSProperties = {
   width: "100%",
-  height: "100vh",
+  height: "100%",
   display: "flex",
   flexDirection: "column",
   fontSize: 14,
   color: "#1f2933",
-  fontFamily: "system-ui, -apple-system, sans-serif"
+  fontFamily: "system-ui, -apple-system, sans-serif",
+  overflow: "hidden"
 }
 
 const tabBarStyle: React.CSSProperties = {
@@ -107,7 +108,9 @@ const errorStyle: React.CSSProperties = {
   color: "#be123c",
   borderRadius: 6,
   padding: "10px 12px",
-  fontSize: 12
+  fontSize: 12,
+  whiteSpace: "pre-line",
+  lineHeight: 1.5
 }
 
 const successStyle: React.CSSProperties = {
@@ -129,7 +132,11 @@ type DomainInfo = {
   addedAt: number
 }
 
-const SidePanel = () => {
+type SidePanelProps = {
+  onClose?: () => void
+}
+
+const SidePanel = ({ onClose }: SidePanelProps = {}) => {
   const [activeTab, setActiveTab] = useState<TabType>("home")
   const [apiKey, setApiKey] = useState("")
   const [model, setModel] = useState("anthropic/claude-3-haiku-20240307")
@@ -232,6 +239,15 @@ const SidePanel = () => {
         throw new Error("Unable to find active tab")
       }
 
+      // Check if this is a special page that can't have content scripts
+      if (tab.url?.startsWith("chrome://") || 
+          tab.url?.startsWith("chrome-extension://") || 
+          tab.url?.startsWith("edge://") ||
+          tab.url?.startsWith("about:") ||
+          tab.url?.startsWith("moz-extension://")) {
+        throw new Error("Cannot generate comments on this page type. Please navigate to a regular webpage.")
+      }
+
       // Extract domain from current tab URL
       if (tab.url) {
         try {
@@ -243,14 +259,94 @@ const SidePanel = () => {
         }
       }
 
+      // First, check if we can inject scripts on this page at all
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: () => {
+            console.log("🔧 Comment Fast: Page supports script injection")
+          }
+        })
+      } catch (scriptError) {
+        console.warn("Cannot inject script on this page:", scriptError)
+        throw new Error([
+          "Cannot inject content script on this page.",
+          "",
+          "This page type does not support browser extensions.",
+          "Current page: " + (tab.url || "unknown"),
+          "",
+          "Please try on a regular webpage (not chrome://, file://, etc.)"
+        ].join("\n"))
+      }
+
+      // Try to ping the content script to see if it's already loaded
+      let contentScriptExists = false
+      try {
+        const pingResponse = await Promise.race([
+          chrome.tabs.sendMessage(tab.id, { type: "PING" }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 300))
+        ])
+        contentScriptExists = true
+        console.log("✅ Content script is already loaded")
+      } catch (e) {
+        console.log("⚠️ Content script not loaded, will inject programmatically")
+      }
+
+      // If content script is not loaded, inject it programmatically
+      if (!contentScriptExists) {
+        try {
+          // Get the content script file name from the manifest
+          const manifest = chrome.runtime.getManifest()
+          const contentScriptFile = manifest.content_scripts?.[0]?.js?.[0]
+          
+          if (contentScriptFile) {
+            await chrome.scripting.executeScript({
+              target: { tabId: tab.id },
+              files: [contentScriptFile]
+            })
+            console.log("✅ Content script injected programmatically")
+            // Wait a bit for it to initialize
+            await new Promise(resolve => setTimeout(resolve, 200))
+          }
+        } catch (injectError) {
+          console.error("Failed to inject content script:", injectError)
+        }
+      }
+
+      // Quick fail: try to send message to content script
       let pageContext
       try {
-        pageContext = await chrome.tabs.sendMessage(tab.id, {
-          type: "GET_PAGE_CONTEXT"
-        })
+        pageContext = await Promise.race([
+          chrome.tabs.sendMessage(tab.id, {
+            type: "GET_PAGE_CONTEXT"
+          }),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error("Content script timeout")), 1000)
+          )
+        ]) as any
       } catch (messageError) {
-        console.error("❌ Content script connection failed:", messageError)
-        throw new Error(`Could not establish connection. Receiving end does not exist. Please refresh the page and try again.`)
+        console.error("❌ Content script not responding:", messageError)
+        
+        // Provide detailed diagnostic information with actionable steps
+        const errorDetails = [
+          "⚠️ Content script is not loaded on this page.",
+          "",
+          "REQUIRED STEPS TO FIX:",
+          "",
+          "1. Go to chrome://extensions",
+          "2. Find 'Comment Fast' extension",
+          "3. Click the REFRESH icon (⟳)",
+          "4. Come back to this page and REFRESH (F5 or Cmd+R)",
+          "5. Open developer console (F12) and check for:",
+          "   '✅ Comment Fast content script loaded'",
+          "",
+          "Current page: " + (tab.url || "unknown"),
+          "",
+          "If the error persists after following these steps,",
+          "the page may have security restrictions."
+        ].join("\n")
+        
+        throw new Error(errorDetails)
       }
 
       if (!pageContext?.success) {
@@ -435,7 +531,7 @@ const SidePanel = () => {
           {showCopyToast}
         </div>
       )}
-      <div style={tabBarStyle}>
+      <div style={{ ...tabBarStyle, position: "relative" }}>
         <button
           style={activeTab === "home" ? activeTabStyle : tabStyle}
           onClick={() => setActiveTab("home")}>
@@ -446,6 +542,28 @@ const SidePanel = () => {
           onClick={() => setActiveTab("settings")}>
           Settings
         </button>
+        {onClose && (
+          <button
+            style={{
+              position: "absolute",
+              right: 8,
+              top: "50%",
+              transform: "translateY(-50%)",
+              border: "none",
+              backgroundColor: "transparent",
+              color: "#64748b",
+              cursor: "pointer",
+              fontSize: 18,
+              padding: "4px 8px",
+              borderRadius: 4,
+              transition: "background-color 0.2s"
+            }}
+            onClick={onClose}
+            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#f3f4f6"}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "transparent"}>
+            ×
+          </button>
+        )}
       </div>
 
       {activeTab === "home" ? (
