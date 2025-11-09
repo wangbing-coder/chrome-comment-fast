@@ -1,8 +1,8 @@
 {
   "name": "comment-fast",
   "displayName": "Comment Fast",
-  "version": "0.0.1",
-  "description": "Automatically generate high-quality, contextual comments for blog posts.",
+  "version": "1.0.0",
+  "description": "AI-powered comment generator and backlinks checker. Generate contextual comments for blogs and analyze backlinks with Domain Rating.",
   "author": "brice94",
   "scripts": {
     "dev": "plasmo dev",
@@ -31,7 +31,10 @@
     ],
     "host_permissions": [
       "<all_urls>",
-      "https://api.openrouter.ai/*"
+      "https://api.openrouter.ai/*",
+      "https://api.capsolver.com/*",
+      "https://ahrefs.com/*"
     ]
   }
 }
+
