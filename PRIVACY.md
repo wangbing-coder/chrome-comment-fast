@@ -90,7 +90,7 @@ We may update this privacy policy from time to time. We will notify users of any
 
 If you have questions about this privacy policy, please contact:
 - GitHub: https://github.com/brice94/comment-fast (please open an issue)
-- Email: [your-email@example.com]
+- Email: leobing2023@gmail.com
 
 ## Open Source
 
