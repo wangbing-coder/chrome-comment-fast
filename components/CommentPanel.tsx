@@ -1,50 +1,82 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
+import { DEBUG } from "../config"
 
 type GenerationStatus = "idle" | "loading" | "success" | "error"
-type TabType = "home" | "settings"
+type TabType = "home" | "backlinks" | "settings"
 
 const containerStyle: React.CSSProperties = {
   width: "100%",
   height: "100%",
   display: "flex",
-  flexDirection: "column",
+  flexDirection: "row",
   fontSize: 14,
   color: "#1f2933",
   fontFamily: "system-ui, -apple-system, sans-serif",
   overflow: "hidden"
 }
 
-const tabBarStyle: React.CSSProperties = {
+const sidebarStyle: React.CSSProperties = {
+  width: "80px",
+  backgroundColor: "#f8fafc",
+  borderRight: "1px solid #e2e8f0",
   display: "flex",
-  borderBottom: "1px solid #e2e8f0",
-  backgroundColor: "#ffffff"
+  flexDirection: "column",
+  alignItems: "center",
+  paddingTop: 20,
+  flexShrink: 0
 }
 
-const tabStyle: React.CSSProperties = {
-  flex: 1,
-  padding: "12px 0",
+const headerStyle: React.CSSProperties = {
+  padding: "16px 24px",
+  borderBottom: "1px solid #e2e8f0",
+  backgroundColor: "#ffffff",
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center"
+}
+
+const iconContainerStyle: React.CSSProperties = {
+  width: "18px",
+  height: "18px",
+  flexShrink: 0,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center"
+}
+
+const tabButtonStyle: React.CSSProperties = {
+  width: "100%",
+  padding: "12px 8px",
   border: "none",
   backgroundColor: "transparent",
-  fontSize: 14,
+  fontSize: 11,
   fontWeight: 500,
   cursor: "pointer",
   color: "#64748b",
-  transition: "color 0.2s"
+  transition: "all 0.2s",
+  display: "flex",
+  flexDirection: "row",
+  alignItems: "center",
+  justifyContent: "flex-start",
+  gap: 8,
+  borderLeft: "3px solid transparent"
 }
 
-const activeTabStyle: React.CSSProperties = {
-  ...tabStyle,
+const activeTabButtonStyle: React.CSSProperties = {
+  ...tabButtonStyle,
   color: "#4f46e5",
-  borderBottom: "2px solid #4f46e5"
+  backgroundColor: "#eef2ff",
+  borderLeftColor: "#4f46e5"
 }
 
 const contentStyle: React.CSSProperties = {
   flex: 1,
-  padding: 20,
+  padding: 24,
   overflowY: "auto",
   display: "flex",
   flexDirection: "column",
-  gap: 16
+  gap: 20,
+  backgroundColor: "#ffffff"
 }
 
 const labelStyle: React.CSSProperties = {
@@ -136,7 +168,62 @@ type SidePanelProps = {
   onClose?: () => void
 }
 
+// Helper functions for extracting page content
+const extractContentSnippet = () => {
+  const articleElement = document.querySelector("article")
+  const target = articleElement ?? document.body
+
+  if (!target) {
+    return ""
+  }
+
+  const texts: string[] = []
+  target.querySelectorAll("p, h1, h2, h3, li").forEach((node) => {
+    const text = node.textContent?.trim()
+    if (text) {
+      texts.push(text)
+    }
+  })
+
+  const snippet = texts.join(" ").replace(/\s+/g, " ")
+  return snippet.slice(0, 2000)
+}
+
+const extractArticleStructure = () => {
+  const structure: Record<string, string> = {}
+
+  const h1 = document.querySelector("h1")
+  if (h1) structure.mainTitle = h1.textContent?.trim() || ""
+
+  const headings = Array.from(document.querySelectorAll("h2, h3")).slice(0, 5)
+  structure.keyPoints = headings.map((h) => h.textContent?.trim() || "").filter(Boolean).join("; ")
+
+  const firstParagraphs = Array.from(document.querySelectorAll("article p, .post-content p, .content p, p"))
+    .slice(0, 3)
+    .map((p) => p.textContent?.trim())
+    .filter(Boolean)
+    .join(" ")
+    .slice(0, 500)
+
+  structure.introduction = firstParagraphs
+
+  const codeBlocks = document.querySelectorAll("pre, code").length
+  structure.hasCode = codeBlocks > 0 ? "yes" : "no"
+
+  return structure
+}
+
 const SidePanel = ({ onClose }: SidePanelProps = {}) => {
+  // Global error handler for debugging (only in debug mode)
+  useEffect(() => {
+    if (!DEBUG) return
+    const errorHandler = (event: ErrorEvent) => {
+      console.error("🔴 Global error caught:", event.error, event.message, event.filename, event.lineno)
+    }
+    window.addEventListener('error', errorHandler)
+    return () => window.removeEventListener('error', errorHandler)
+  }, [])
+  
   const [activeTab, setActiveTab] = useState<TabType>("home")
   const [apiKey, setApiKey] = useState("")
   const [model, setModel] = useState("anthropic/claude-3-haiku-20240307")
@@ -155,19 +242,28 @@ const SidePanel = ({ onClose }: SidePanelProps = {}) => {
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
   const [showCopyToast, setShowCopyToast] = useState<string>("")
   const [currentDomain, setCurrentDomain] = useState<string>("")
+  
+  // Backlinks states
+  const [capsolverApiKey, setCapsolverApiKey] = useState("")
+  const [backlinksDomain, setBacklinksDomain] = useState("")
+  const [backlinksLoading, setBacklinksLoading] = useState(false)
+  const [backlinksData, setBacklinksData] = useState<any>(null)
+  const [backlinksError, setBacklinksError] = useState<string | null>(null)
 
   useEffect(() => {
     void (async () => {
-      const { aiApiKey, aiModel, commentLength: savedLength, userDomains } = await chrome.storage.sync.get([
+      const { aiApiKey, aiModel, commentLength: savedLength, userDomains, capsolverApiKey: savedCapsolverKey } = await chrome.storage.sync.get([
         "aiApiKey",
         "aiModel",
         "commentLength",
-        "userDomains"
+        "userDomains",
+        "capsolverApiKey"
       ])
       if (aiApiKey) setApiKey(aiApiKey)
       if (aiModel) setModel(aiModel)
       if (savedLength) setCommentLength(savedLength)
       if (userDomains) setDomains(userDomains)
+      if (savedCapsolverKey) setCapsolverApiKey(savedCapsolverKey)
     })()
   }, [])
 
@@ -197,11 +293,12 @@ const SidePanel = ({ onClose }: SidePanelProps = {}) => {
     await chrome.storage.sync.set({
       aiApiKey: apiKey.trim(),
       aiModel: model.trim(),
-      commentLength: commentLength
+      commentLength: commentLength,
+      capsolverApiKey: capsolverApiKey.trim()
     })
     setSaveMessage("Settings saved successfully")
     setTimeout(() => setSaveMessage(null), 3000)
-  }, [apiKey, model, commentLength])
+  }, [apiKey, model, commentLength, capsolverApiKey])
 
   // Refresh settings from storage after saving
   const refreshSettings = useCallback(async () => {
@@ -233,124 +330,44 @@ const SidePanel = ({ onClose }: SidePanelProps = {}) => {
     setCurrentDomain("") // Clear previous domain
 
     try {
-      const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true })
-
-      if (!tab?.id) {
-        throw new Error("Unable to find active tab")
-      }
-
+      // Get current page URL from window.location
+      const currentUrl = window.location.href
+      
       // Check if this is a special page that can't have content scripts
-      if (tab.url?.startsWith("chrome://") || 
-          tab.url?.startsWith("chrome-extension://") || 
-          tab.url?.startsWith("edge://") ||
-          tab.url?.startsWith("about:") ||
-          tab.url?.startsWith("moz-extension://")) {
+      if (currentUrl.startsWith("chrome://") || 
+          currentUrl.startsWith("chrome-extension://") || 
+          currentUrl.startsWith("edge://") ||
+          currentUrl.startsWith("about:") ||
+          currentUrl.startsWith("moz-extension://")) {
         throw new Error("Cannot generate comments on this page type. Please navigate to a regular webpage.")
       }
 
-      // Extract domain from current tab URL
-      if (tab.url) {
-        try {
-          const url = new URL(tab.url)
-          setCurrentDomain(url.hostname)
-        } catch (urlError) {
-          console.warn("Could not parse domain from URL:", urlError)
-          setCurrentDomain("Unknown")
+      // Extract domain from current URL
+      try {
+        const url = new URL(currentUrl)
+        setCurrentDomain(url.hostname)
+      } catch (urlError) {
+        if (DEBUG) console.warn("Could not parse domain from URL:", urlError)
+        setCurrentDomain("Unknown")
+      }
+
+      // Get page context from content script (we're already in the page context)
+      const title = document.title || ""
+      const contentSnippet = extractContentSnippet()
+      const structure = extractArticleStructure()
+
+      const pageContext = {
+        success: true,
+        payload: {
+          title,
+          url: currentUrl,
+          contentSnippet,
+          structure
         }
-      }
-
-      // First, check if we can inject scripts on this page at all
-      try {
-        await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          func: () => {
-            console.log("🔧 Comment Fast: Page supports script injection")
-          }
-        })
-      } catch (scriptError) {
-        console.warn("Cannot inject script on this page:", scriptError)
-        throw new Error([
-          "Cannot inject content script on this page.",
-          "",
-          "This page type does not support browser extensions.",
-          "Current page: " + (tab.url || "unknown"),
-          "",
-          "Please try on a regular webpage (not chrome://, file://, etc.)"
-        ].join("\n"))
-      }
-
-      // Try to ping the content script to see if it's already loaded
-      let contentScriptExists = false
-      try {
-        const pingResponse = await Promise.race([
-          chrome.tabs.sendMessage(tab.id, { type: "PING" }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 300))
-        ])
-        contentScriptExists = true
-        console.log("✅ Content script is already loaded")
-      } catch (e) {
-        console.log("⚠️ Content script not loaded, will inject programmatically")
-      }
-
-      // If content script is not loaded, inject it programmatically
-      if (!contentScriptExists) {
-        try {
-          // Get the content script file name from the manifest
-          const manifest = chrome.runtime.getManifest()
-          const contentScriptFile = manifest.content_scripts?.[0]?.js?.[0]
-          
-          if (contentScriptFile) {
-            await chrome.scripting.executeScript({
-              target: { tabId: tab.id },
-              files: [contentScriptFile]
-            })
-            console.log("✅ Content script injected programmatically")
-            // Wait a bit for it to initialize
-            await new Promise(resolve => setTimeout(resolve, 200))
-          }
-        } catch (injectError) {
-          console.error("Failed to inject content script:", injectError)
-        }
-      }
-
-      // Quick fail: try to send message to content script
-      let pageContext
-      try {
-        pageContext = await Promise.race([
-          chrome.tabs.sendMessage(tab.id, {
-            type: "GET_PAGE_CONTEXT"
-          }),
-          new Promise((_, reject) => 
-            setTimeout(() => reject(new Error("Content script timeout")), 1000)
-          )
-        ]) as any
-      } catch (messageError) {
-        console.error("❌ Content script not responding:", messageError)
-        
-        // Provide detailed diagnostic information with actionable steps
-        const errorDetails = [
-          "⚠️ Content script is not loaded on this page.",
-          "",
-          "REQUIRED STEPS TO FIX:",
-          "",
-          "1. Go to chrome://extensions",
-          "2. Find 'Comment Fast' extension",
-          "3. Click the REFRESH icon (⟳)",
-          "4. Come back to this page and REFRESH (F5 or Cmd+R)",
-          "5. Open developer console (F12) and check for:",
-          "   '✅ Comment Fast content script loaded'",
-          "",
-          "Current page: " + (tab.url || "unknown"),
-          "",
-          "If the error persists after following these steps,",
-          "the page may have security restrictions."
-        ].join("\n")
-        
-        throw new Error(errorDetails)
       }
 
       if (!pageContext?.success) {
-        throw new Error(pageContext?.error ?? "Failed to get page context")
+        throw new Error("Failed to get page context")
       }
 
       let response
@@ -509,6 +526,72 @@ const SidePanel = ({ onClose }: SidePanelProps = {}) => {
     setDraggedIndex(null)
   }, [])
 
+  // Backlinks functionality
+  const handleFetchBacklinks = useCallback(async () => {
+    if (DEBUG) console.log("🔵 handleFetchBacklinks called, backlinksDomain:", backlinksDomain)
+    let domainToFetch = backlinksDomain.trim()
+    
+    // If no domain entered, use current page domain
+    if (!domainToFetch) {
+      if (DEBUG) console.log("🔵 No domain entered, trying to get current page domain...")
+      try {
+        // Get current tab info from background script
+        const response = await chrome.runtime.sendMessage({ type: "GET_CURRENT_TAB" })
+        if (DEBUG) console.log("🔵 Current tab response:", response)
+        
+        if (response?.success && response.domain) {
+          domainToFetch = response.domain
+          if (DEBUG) console.log("✅ Extracted domain:", domainToFetch)
+          setBacklinksDomain(domainToFetch) // Update the input field
+        } else {
+          console.error("❌ Failed to get current tab:", response?.error)
+          setBacklinksError(response?.error || "Failed to get current page domain")
+          return
+        }
+      } catch (err) {
+        console.error("❌ Error getting current domain:", err)
+        setBacklinksError(`Error: ${err instanceof Error ? err.message : String(err)}`)
+        return
+      }
+    }
+    
+    if (DEBUG) console.log("🔵 Domain to fetch:", domainToFetch)
+
+    // Get the latest CapSolver API key from storage
+    const { capsolverApiKey: savedCapsolverKey } = await chrome.storage.sync.get(["capsolverApiKey"])
+
+    if (!savedCapsolverKey?.trim()) {
+      setBacklinksError("Please configure CapSolver API Key in Settings")
+      return
+    }
+
+    setBacklinksLoading(true)
+    setBacklinksError(null)
+    setBacklinksData(null)
+
+    try {
+      // Send message to background script to fetch backlinks
+      const response = await chrome.runtime.sendMessage({
+        type: "FETCH_BACKLINKS",
+        payload: {
+          domain: domainToFetch,
+          capsolverApiKey: savedCapsolverKey
+        }
+      })
+
+      if (!response?.success) {
+        throw new Error(response?.error ?? "Failed to fetch backlinks")
+      }
+
+      setBacklinksData(response.data)
+      setBacklinksLoading(false)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      setBacklinksError(message)
+      setBacklinksLoading(false)
+    }
+  }, [backlinksDomain])
+
   return (
     <div style={containerStyle}>
       {showCopyToast && (
@@ -531,49 +614,57 @@ const SidePanel = ({ onClose }: SidePanelProps = {}) => {
           {showCopyToast}
         </div>
       )}
-      <div style={{ ...tabBarStyle, position: "relative" }}>
+      
+      {/* Left Sidebar */}
+      <div style={sidebarStyle}>
         <button
-          style={activeTab === "home" ? activeTabStyle : tabStyle}
+          style={activeTab === "home" ? activeTabButtonStyle : tabButtonStyle}
           onClick={() => setActiveTab("home")}>
-          Home
+          <span>Home</span>
         </button>
         <button
-          style={activeTab === "settings" ? activeTabStyle : tabStyle}
-          onClick={() => setActiveTab("settings")}>
-          Settings
+          style={activeTab === "backlinks" ? activeTabButtonStyle : tabButtonStyle}
+          onClick={() => setActiveTab("backlinks")}>
+          <span>Backlinks</span>
         </button>
-        {onClose && (
-          <button
-            style={{
-              position: "absolute",
-              right: 8,
-              top: "50%",
-              transform: "translateY(-50%)",
-              border: "none",
-              backgroundColor: "transparent",
-              color: "#64748b",
-              cursor: "pointer",
-              fontSize: 18,
-              padding: "4px 8px",
-              borderRadius: 4,
-              transition: "background-color 0.2s"
-            }}
-            onClick={onClose}
-            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#f3f4f6"}
-            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "transparent"}>
-            ×
-          </button>
-        )}
+        <button
+          style={activeTab === "settings" ? activeTabButtonStyle : tabButtonStyle}
+          onClick={() => setActiveTab("settings")}>
+          <span>Settings</span>
+        </button>
       </div>
 
-      {activeTab === "home" ? (
+      {/* Right Content Area */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+        {/* Header */}
+        <div style={headerStyle}>
+          <div>
+            <h1 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: "#1f2937", fontFamily: "system-ui, -apple-system, sans-serif" }}>
+              Comment Fast
+            </h1>
+          </div>
+          {onClose && (
+            <button
+              style={{
+                border: "none",
+                backgroundColor: "transparent",
+                color: "#64748b",
+                cursor: "pointer",
+                fontSize: 20,
+                padding: "4px 8px",
+                borderRadius: 4,
+                transition: "background-color 0.2s"
+              }}
+              onClick={onClose}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#f3f4f6"}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "transparent"}>
+              ×
+            </button>
+          )}
+        </div>
+
+        {activeTab === "home" ? (
         <div style={contentStyle}>
-          <header style={{ marginBottom: 8 }}>
-            <h1 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>Comment Fast</h1>
-            <p style={{ margin: "6px 0 0 0", fontSize: 13, color: "#64748b" }}>
-              Generate high-quality comments for blog posts
-            </p>
-          </header>
 
           <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <button
@@ -882,15 +973,140 @@ const SidePanel = ({ onClose }: SidePanelProps = {}) => {
             AI automatically detects and matches the article's language
           </footer>
         </div>
+      ) : activeTab === "backlinks" ? (
+        <div style={contentStyle}>
+          <section style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600, fontFamily: "system-ui, -apple-system, sans-serif" }}>Backlinks Checker</h2>
+            <p style={{ fontSize: 13, color: "#64748b", margin: 0 }}>
+              Get backlinks data from Ahrefs using CapSolver to bypass verification
+            </p>
+
+            <label style={labelStyle}>
+              <span>Domain</span>
+              <input
+                style={inputStyle}
+                type="text"
+                placeholder="Leave empty to use current page domain"
+                value={backlinksDomain}
+                onChange={(e) => setBacklinksDomain(e.target.value)}
+              />
+              <span style={{ fontSize: 11, color: "#64748b" }}>
+                Enter domain or leave empty to use current page (http://, https://, and trailing slashes will be automatically removed)
+              </span>
+            </label>
+
+            <button
+              style={backlinksLoading ? disabledButtonStyle : buttonStyle}
+              disabled={backlinksLoading}
+              onClick={handleFetchBacklinks}>
+              {backlinksLoading ? "Fetching Backlinks..." : "Get Backlinks"}
+            </button>
+
+            {backlinksError && <p style={errorStyle}>{backlinksError}</p>}
+
+            {backlinksData && (() => {
+              // Support both data structures: data[1].backlinks or data[1].topBacklinks.backlinks
+              const backlinks = backlinksData[1]?.backlinks || backlinksData[1]?.topBacklinks?.backlinks
+              
+              return (
+                <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>Backlinks Results</h3>
+                  
+                  {backlinks && backlinks.length > 0 ? (
+                    <>
+                    <div style={{ 
+                      fontSize: 12, 
+                      color: "#059669", 
+                      backgroundColor: "#dcfce7",
+                      padding: "8px 12px",
+                      borderRadius: 6,
+                      border: "1px solid #bbf7d0"
+                    }}>
+                      ✅ Found {backlinks.length} backlink{backlinks.length > 1 ? 's' : ''}
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {backlinks.map((backlink: any, index: number) => (
+                        <div
+                          key={index}
+                          style={{
+                            border: "1px solid #e2e8f0",
+                            borderRadius: 6,
+                            padding: "10px 12px",
+                            backgroundColor: "#ffffff",
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            gap: 12
+                          }}>
+                          <a
+                            href={backlink.urlFrom}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{
+                              fontSize: 13,
+                              color: "#4f46e5",
+                              textDecoration: "none",
+                              wordBreak: "break-all",
+                              flex: 1
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.textDecoration = "underline"}
+                            onMouseLeave={(e) => e.currentTarget.style.textDecoration = "none"}>
+                            {backlink.urlFrom}
+                          </a>
+                          {backlink.domainRating !== undefined && (
+                            <div style={{ 
+                              fontSize: 12, 
+                              fontWeight: 600,
+                              color: "#059669", 
+                              backgroundColor: "#dcfce7",
+                              padding: "4px 10px",
+                              borderRadius: 4,
+                              flexShrink: 0,
+                              minWidth: 40,
+                              textAlign: "center"
+                            }}>
+                              DR {backlink.domainRating}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <div style={{
+                    border: "1px solid #fecdd3",
+                    backgroundColor: "#ffe4e6",
+                    color: "#be123c",
+                    borderRadius: 6,
+                    padding: "12px 16px",
+                    fontSize: 13
+                  }}>
+                    <div style={{ fontWeight: 600, marginBottom: 4 }}>No backlinks found</div>
+                    <div style={{ fontSize: 12 }}>
+                      This domain may not have any backlinks indexed by Ahrefs, or the data structure is unexpected.
+                      Check the browser console (F12) for detailed logs.
+                    </div>
+                    <details style={{ marginTop: 8, fontSize: 11 }}>
+                      <summary style={{ cursor: "pointer", fontWeight: 500 }}>View raw response</summary>
+                      <pre style={{ 
+                        marginTop: 8, 
+                        padding: 8, 
+                        backgroundColor: "#fff1f2",
+                        borderRadius: 4,
+                        overflow: "auto",
+                        maxHeight: 200
+                      }}>
+                        {JSON.stringify(backlinksData, null, 2)}
+                      </pre>
+                    </details>
+                  </div>
+                )}
+              </section>
+            )})()}
+          </section>
+        </div>
       ) : (
         <div style={contentStyle}>
-          <header style={{ marginBottom: 8 }}>
-            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>Settings</h2>
-            <p style={{ margin: "6px 0 0 0", fontSize: 13, color: "#64748b" }}>
-              Configure your AI model and API credentials
-            </p>
-          </header>
-
           <section style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <label style={labelStyle}>
               <span>API Key</span>
@@ -938,6 +1154,24 @@ const SidePanel = ({ onClose }: SidePanelProps = {}) => {
               </span>
             </label>
 
+            <label style={labelStyle}>
+              <span>CapSolver API Key</span>
+              <input
+                style={inputStyle}
+                type="password"
+                placeholder="CAP-XXXXXXXXXXXXXX"
+                value={capsolverApiKey}
+                onChange={(event) => setCapsolverApiKey(event.target.value)}
+              />
+              <span style={{ fontSize: 11, color: "#64748b" }}>
+                CapSolver API key from{" "}
+                <a href="https://www.capsolver.com" target="_blank" rel="noreferrer">
+                  capsolver.com
+                </a>
+                {" "}for backlinks feature
+              </span>
+            </label>
+
             <button style={buttonStyle} onClick={handleSaveSettings}>
               Save Settings
             </button>
@@ -964,7 +1198,8 @@ const SidePanel = ({ onClose }: SidePanelProps = {}) => {
             </div>
           </footer>
         </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }

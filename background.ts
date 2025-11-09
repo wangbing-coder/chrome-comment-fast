@@ -1,3 +1,5 @@
+import { DEBUG } from "./config"
+
 type ArticleStructure = {
   mainTitle?: string
   keyPoints?: string
@@ -15,7 +17,19 @@ type GenerateCommentRequest = {
   }
 }
 
-type BackgroundMessage = GenerateCommentRequest
+type FetchBacklinksRequest = {
+  type: "FETCH_BACKLINKS"
+  payload: {
+    domain: string
+    capsolverApiKey: string
+  }
+}
+
+type GetCurrentTabRequest = {
+  type: "GET_CURRENT_TAB"
+}
+
+type BackgroundMessage = GenerateCommentRequest | FetchBacklinksRequest | GetCurrentTabRequest
 
 type OpenRouterResponse = {
   choices?: Array<{
@@ -75,7 +89,234 @@ const buildSmartPrompt = (
   return prompt
 }
 
+// Backlinks helper functions
+// Clean domain: remove protocol and trailing slashes
+const cleanDomain = (domain: string): string => {
+  let cleaned = domain.trim()
+  // Remove protocol
+  cleaned = cleaned.replace(/^https?:\/\//i, '')
+  // Remove www. prefix
+  // cleaned = cleaned.replace(/^www\./i, '')
+  // Remove trailing slashes
+  cleaned = cleaned.replace(/\/+$/g, '')
+  return cleaned
+}
+
+const getToken = async (domain: string, capsolverApiKey: string): Promise<string> => {
+  const siteKey = "0x4AAAAAAAAzi9ITzSN9xKMi"
+  const siteUrl = `https://ahrefs.com/backlink-checker/?input=${domain}&mode=subdomains`
+  
+  if (DEBUG) console.log("🔵 Creating CapSolver task for domain:", domain)
+  
+  const payload = {
+    clientKey: capsolverApiKey,
+    task: {
+      type: 'AntiTurnstileTaskProxyLess',
+      websiteKey: siteKey,
+      websiteURL: siteUrl,
+      metadata: {
+        action: ""
+      }
+    }
+  }
+
+  const res = await fetch("https://api.capsolver.com/createTask", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  })
+  const resp = await res.json()
+  if (DEBUG) console.log("CapSolver createTask response:", resp)
+  
+  const taskId = resp.taskId
+
+  if (!taskId) {
+    throw new Error(`Failed to create CapSolver task: ${JSON.stringify(resp)}`)
+  }
+  
+  if (DEBUG) console.log("✅ Task created, taskId:", taskId)
+
+  // Poll for result
+  let attempts = 0
+  const maxAttempts = 60 // 60 seconds max
+  
+  while (attempts < maxAttempts) {
+    await new Promise(resolve => setTimeout(resolve, 1000))
+    attempts++
+    
+    const pollPayload = { clientKey: capsolverApiKey, taskId }
+    const pollRes = await fetch("https://api.capsolver.com/getTaskResult", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(pollPayload)
+    })
+    const pollResp = await pollRes.json()
+    
+    if (pollResp.status === "ready") {
+      if (DEBUG) console.log("✅ CapSolver token ready")
+      return pollResp.solution.token
+    }
+    if (pollResp.status === "failed" || pollResp.errorId) {
+      console.error("❌ CapSolver failed:", pollResp)
+      throw new Error(`CapSolver failed: ${JSON.stringify(pollResp)}`)
+    }
+    
+    // Log progress every 5 seconds
+    if (attempts % 5 === 0) {
+      if (DEBUG) console.log(`⏳ Waiting for CapSolver... (${attempts}s elapsed, status: ${pollResp.status})`)
+    }
+  }
+  
+  throw new Error("CapSolver timeout after 60 seconds")
+}
+
+const getSignature = async (token: string, domain: string): Promise<{ signature: string; validUntil: number }> => {
+  const url = "https://ahrefs.com/v4/stGetFreeBacklinksOverview"
+  const payload = {
+    captcha: token,
+    mode: "subdomains",
+    url: domain
+  }
+
+  if (DEBUG) console.log("🔵 Requesting signature from Ahrefs with payload:", payload)
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error("❌ Ahrefs signature request failed:", response.status, errorText)
+    throw new Error(`Failed to get signature: ${response.status} - ${errorText}`)
+  }
+
+  const data = await response.json()
+  if (DEBUG) console.log("✅ Signature response received:", JSON.stringify(data).substring(0, 200))
+  
+  if (Array.isArray(data) && data.length > 1) {
+    const signature = data[1].signedInput.signature
+    const validUntil = data[1].signedInput.input.validUntil
+    if (DEBUG) console.log("✅ Extracted signature and validUntil")
+    return { signature, validUntil }
+  }
+  
+  console.error("❌ Invalid signature response format:", data)
+  throw new Error(`Invalid signature response format: ${JSON.stringify(data)}`)
+}
+
+const getBacklinks = async (signature: string, validUntil: number, domain: string): Promise<any> => {
+  const url = "https://ahrefs.com/v4/stGetFreeBacklinksList"
+  const payload = {
+    reportType: "TopBacklinks",
+    signedInput: {
+      signature,
+      input: {
+        validUntil,
+        mode: "subdomains",
+        url: `${domain}/`
+      }
+    }
+  }
+
+  if (DEBUG) console.log("🔵 Requesting backlinks from Ahrefs")
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error("❌ Ahrefs backlinks request failed:", response.status, errorText)
+    throw new Error(`Failed to get backlinks: ${response.status} - ${errorText}`)
+  }
+
+  const data = await response.json()
+  if (DEBUG) console.log("✅ Backlinks response received:", JSON.stringify(data).substring(0, 300))
+  
+  // Log the structure to help debug
+  if (data && data[1] && data[1].backlinks) {
+    if (DEBUG) console.log(`📊 Found ${data[1].backlinks?.length || 0} backlinks`)
+  } else if (data && data[1] && data[1].topBacklinks) {
+    if (DEBUG) console.log(`📊 Found ${data[1].topBacklinks.backlinks?.length || 0} backlinks (nested)`)
+  } else {
+    if (DEBUG) console.warn("⚠️ Unexpected data structure. Keys:", Object.keys(data))
+  }
+  
+  return data
+}
+
 chrome.runtime.onMessage.addListener((message: BackgroundMessage, _sender, sendResponse) => {
+  if (message?.type === "GET_CURRENT_TAB") {
+    ;(async () => {
+      try {
+        const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true })
+        if (tab?.url) {
+          const url = new URL(tab.url)
+          sendResponse({ success: true, domain: url.hostname, url: tab.url })
+        } else {
+          sendResponse({ success: false, error: "No active tab found" })
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        sendResponse({ success: false, error: message })
+      }
+    })()
+    return true
+  }
+  
+  if (message?.type === "FETCH_BACKLINKS") {
+    ;(async () => {
+      try {
+        let { domain, capsolverApiKey } = message.payload
+
+        if (!capsolverApiKey) {
+          sendResponse({ success: false, error: "Missing CapSolver API Key" })
+          return
+        }
+
+        if (!domain) {
+          sendResponse({ success: false, error: "Missing domain" })
+          return
+        }
+
+        // Clean the domain
+        domain = cleanDomain(domain)
+        if (DEBUG) console.log("🔵 Fetching backlinks for cleaned domain:", domain)
+
+        // Step 1: Get token
+        if (DEBUG) console.log("Step 1: Getting CapSolver token...")
+        const token = await getToken(domain, capsolverApiKey)
+        if (DEBUG) console.log("✅ Token received:", token.substring(0, 20) + "...")
+
+        // Step 2: Get signature
+        if (DEBUG) console.log("Step 2: Getting signature...")
+        const { signature, validUntil } = await getSignature(token, domain)
+        if (DEBUG) console.log("✅ Signature received, validUntil value:", validUntil, "type:", typeof validUntil)
+        try {
+          if (DEBUG) console.log("Valid until:", new Date(validUntil * 1000).toISOString())
+        } catch (e) {
+          if (DEBUG) console.log("Valid until (raw):", validUntil)
+        }
+
+        // Step 3: Get backlinks
+        if (DEBUG) console.log("Step 3: Getting backlinks...")
+        const data = await getBacklinks(signature, validUntil, domain)
+        if (DEBUG) console.log("✅ Backlinks data structure:", Object.keys(data))
+
+        sendResponse({ success: true, data })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        console.error("❌ Backlinks fetch error:", message)
+        sendResponse({ success: false, error: message })
+      }
+    })()
+    return true
+  }
+
   if (message?.type !== "GENERATE_COMMENT") {
     return
   }
@@ -174,10 +415,10 @@ chrome.runtime.onMessage.addListener((message: BackgroundMessage, _sender, sendR
 
 // Handle extension icon click - toggle floating panel
 chrome.action.onClicked.addListener(async (tab) => {
-  console.log("🔵 Extension icon clicked, tab:", tab.url)
+  if (DEBUG) console.log("🔵 Extension icon clicked, tab:", tab.url)
   
   if (!tab.id) {
-    console.warn("⚠️ No tab ID available")
+    if (DEBUG) console.warn("⚠️ No tab ID available")
     return
   }
 
@@ -188,20 +429,20 @@ chrome.action.onClicked.addListener(async (tab) => {
         tab.url?.startsWith("edge://") ||
         tab.url?.startsWith("about:") ||
         tab.url?.startsWith("moz-extension://")) {
-      console.warn("⚠️ Cannot inject floating panel on this page type:", tab.url)
+      if (DEBUG) console.warn("⚠️ Cannot inject floating panel on this page type:", tab.url)
       return
     }
 
-    console.log("✅ Page supports content scripts, sending message to toggle panel")
+    if (DEBUG) console.log("✅ Page supports content scripts, sending message to toggle panel")
     
     // Send message to content script to toggle panel
     await chrome.tabs.sendMessage(tab.id, {
       type: "TOGGLE_FLOATING_PANEL"
     })
     
-    console.log("✅ Toggle panel message sent successfully")
+    if (DEBUG) console.log("✅ Toggle panel message sent successfully")
   } catch (error) {
     console.error("❌ Failed to toggle floating panel:", error)
-    console.log("💡 Try refreshing the page and clicking the icon again")
+    if (DEBUG) console.log("💡 Try refreshing the page and clicking the icon again")
   }
 })

@@ -2,6 +2,7 @@ import type { PlasmoCSConfig } from "plasmo"
 import { createRoot } from "react-dom/client"
 import React from "react"
 import SidePanel from "./components/CommentPanel"
+import { DEBUG } from "./config"
 
 export const config: PlasmoCSConfig = {
   matches: ["<all_urls>"],
@@ -45,8 +46,9 @@ const createFloatingPanel = async () => {
     height: 100vh;
     background: rgba(0, 0, 0, 0.2);
     z-index: 2147483646;
+    pointer-events: none;
   `
-  backdrop.addEventListener("click", removePanel)
+  // Removed: backdrop.addEventListener("click", removePanel)
 
   // Create container
   const container = document.createElement("div")
@@ -55,13 +57,14 @@ const createFloatingPanel = async () => {
     position: fixed;
     top: 0;
     right: 0;
-    width: 400px;
+    width: 480px;
     height: 100vh;
     z-index: 2147483647;
     background: white;
     box-shadow: -2px 0 8px rgba(0, 0, 0, 0.15);
     font-family: system-ui, -apple-system, sans-serif;
     overflow: hidden;
+    pointer-events: auto;
   `
 
   document.body.appendChild(backdrop)
@@ -136,7 +139,7 @@ const extractArticleStructure = () => {
 }
 
 // Log that content script is loaded
-console.log("✅ Comment Fast content script loaded on:", window.location.href)
+if (DEBUG) console.log("✅ Comment Fast content script loaded on:", window.location.href)
 
 // Ensure message listener is set up immediately
 chrome.runtime.onMessage.addListener((message: ContentMessage | { type: "TOGGLE_FLOATING_PANEL" | "PING" }, _sender, sendResponse) => {
