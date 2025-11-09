@@ -43,14 +43,14 @@ Comment Fast connects to third-party APIs only when you explicitly use certain f
 - **When Used**: Only when you use the backlinks checker feature
 - **Data Sent**: Domain name you're checking, Cloudflare challenge tokens
 - **Your Control**: Optional feature, uses your own API key
-- **Privacy Policy**: https://www.capsolver.com/privacy-policy
+- **Privacy Policy**: https://www.capsolver.com/privacy
 
 ### 3. Ahrefs (https://ahrefs.com)
 - **Purpose**: Fetch publicly available backlinks data
 - **When Used**: Only when you use the backlinks checker feature
 - **Data Sent**: Domain name, verified tokens from CapSolver
 - **Data Type**: Publicly available information only
-- **Privacy Policy**: https://ahrefs.com/privacy
+- **Privacy Policy**: https://ahrefs.com/legal/privacy-policy
 
 ## Permissions Explained
 
@@ -89,13 +89,13 @@ We may update this privacy policy from time to time. We will notify users of any
 ## Contact
 
 If you have questions about this privacy policy, please contact:
-- GitHub: https://github.com/brice94/comment-fast (please open an issue)
+- GitHub: https://github.com/wangbing-coder/chrome-comment-fast (please open an issue)
 - Email: leobing2023@gmail.com
 
 ## Open Source
 
 Comment Fast is open source. You can review the complete source code to verify our privacy practices:
-- Repository: https://github.com/brice94/comment-fast
+- Repository: https://github.com/wangbing-coder/chrome-comment-fast
 
 ## Consent
 
