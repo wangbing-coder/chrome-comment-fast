@@ -249,6 +249,8 @@ const SidePanel = ({ onClose }: SidePanelProps = {}) => {
   const [backlinksLoading, setBacklinksLoading] = useState(false)
   const [backlinksData, setBacklinksData] = useState<any>(null)
   const [backlinksError, setBacklinksError] = useState<string | null>(null)
+  const [checkLoading, setCheckLoading] = useState(false)
+  const [checkResults, setCheckResults] = useState<{[key: string]: {exists: boolean, canSubmit: boolean}} | null>(null)
 
   useEffect(() => {
     void (async () => {
@@ -568,6 +570,7 @@ const SidePanel = ({ onClose }: SidePanelProps = {}) => {
     setBacklinksLoading(true)
     setBacklinksError(null)
     setBacklinksData(null)
+    setCheckResults(null) // Clear previous check results
 
     try {
       // Send message to background script to fetch backlinks
@@ -591,6 +594,55 @@ const SidePanel = ({ onClose }: SidePanelProps = {}) => {
       setBacklinksLoading(false)
     }
   }, [backlinksDomain])
+
+  // Check which backlinks exist in database
+  const handleCheckBacklinks = useCallback(async () => {
+    if (!backlinksData) return
+
+    const backlinks = backlinksData[1]?.backlinks || backlinksData[1]?.topBacklinks?.backlinks
+    if (!backlinks || backlinks.length === 0) {
+      setBacklinksError("No backlinks to check")
+      return
+    }
+
+    setCheckLoading(true)
+    setBacklinksError(null)
+
+    try {
+      const urls = backlinks.map((bl: any) => bl.urlFrom)
+      
+      const response = await fetch("https://link-manager.leobing2023.workers.dev/api/external/check", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ urls })
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(`Failed to check backlinks: ${errorText}`)
+      }
+
+      const data = await response.json()
+      
+      // Create a map of URL to check result
+      const resultsMap: {[key: string]: {exists: boolean, canSubmit: boolean}} = {}
+      data.results.forEach((result: any) => {
+        resultsMap[result.url] = {
+          exists: result.exists,
+          canSubmit: result.canSubmit
+        }
+      })
+
+      setCheckResults(resultsMap)
+      setCheckLoading(false)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      setBacklinksError(message)
+      setCheckLoading(false)
+    }
+  }, [backlinksData])
 
   return (
     <div style={containerStyle}>
@@ -1020,56 +1072,84 @@ const SidePanel = ({ onClose }: SidePanelProps = {}) => {
                       backgroundColor: "#dcfce7",
                       padding: "8px 12px",
                       borderRadius: 6,
-                      border: "1px solid #bbf7d0"
+                      border: "1px solid #bbf7d0",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center"
                     }}>
-                      ✅ Found {backlinks.length} backlink{backlinks.length > 1 ? 's' : ''}
+                      <span>✅ Found {backlinks.length} backlink{backlinks.length > 1 ? 's' : ''}</span>
+                      <button
+                        style={{
+                          ...secondaryButtonStyle,
+                          padding: "6px 16px",
+                          fontSize: 12,
+                          marginLeft: 12,
+                          backgroundColor: checkLoading ? "#a5b4fc" : (checkResults ? "#10b981" : "#4f46e5"),
+                          color: "white",
+                          borderColor: checkLoading ? "#a5b4fc" : (checkResults ? "#10b981" : "#4f46e5"),
+                          cursor: checkLoading ? "not-allowed" : "pointer"
+                        }}
+                        disabled={checkLoading}
+                        onClick={handleCheckBacklinks}>
+                        {checkLoading ? "Checking..." : (checkResults ? "✓ Checked" : "Check Database")}
+                      </button>
                     </div>
+                    
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                      {backlinks.map((backlink: any, index: number) => (
-                        <div
-                          key={index}
-                          style={{
-                            border: "1px solid #e2e8f0",
-                            borderRadius: 6,
-                            padding: "10px 12px",
-                            backgroundColor: "#ffffff",
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "center",
-                            gap: 12
-                          }}>
-                          <a
-                            href={backlink.urlFrom}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                      {backlinks.map((backlink: any, index: number) => {
+                        const checkResult = checkResults?.[backlink.urlFrom]
+                        const isNew = checkResult?.canSubmit === true
+                        const isExisting = checkResult?.exists === true
+                        
+                        return (
+                          <div
+                            key={index}
                             style={{
-                              fontSize: 13,
-                              color: "#4f46e5",
-                              textDecoration: "none",
-                              wordBreak: "break-all",
-                              flex: 1
-                            }}
-                            onMouseEnter={(e) => e.currentTarget.style.textDecoration = "underline"}
-                            onMouseLeave={(e) => e.currentTarget.style.textDecoration = "none"}>
-                            {backlink.urlFrom}
-                          </a>
-                          {backlink.domainRating !== undefined && (
-                            <div style={{ 
-                              fontSize: 12, 
-                              fontWeight: 600,
-                              color: "#059669", 
-                              backgroundColor: "#dcfce7",
-                              padding: "4px 10px",
-                              borderRadius: 4,
-                              flexShrink: 0,
-                              minWidth: 40,
-                              textAlign: "center"
+                              border: `1px solid ${isNew ? "#bbf7d0" : isExisting ? "#fed7aa" : "#e2e8f0"}`,
+                              borderRadius: 6,
+                              padding: "10px 12px",
+                              backgroundColor: isNew ? "#dcfce7" : isExisting ? "#ffedd5" : "#ffffff",
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                              gap: 12,
+                              transition: "all 0.2s ease"
                             }}>
-                              DR {backlink.domainRating}
+                            <a
+                              href={backlink.urlFrom}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{
+                                fontSize: 13,
+                                color: isNew ? "#15803d" : isExisting ? "#9a3412" : "#4f46e5",
+                                textDecoration: "none",
+                                wordBreak: "break-all",
+                                flex: 1,
+                                fontWeight: isNew ? 600 : 400
+                              }}
+                              onMouseEnter={(e) => e.currentTarget.style.textDecoration = "underline"}
+                              onMouseLeave={(e) => e.currentTarget.style.textDecoration = "none"}>
+                              {backlink.urlFrom}
+                            </a>
+                            <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+                              {backlink.domainRating !== undefined && (
+                                <div style={{ 
+                                  fontSize: 12, 
+                                  fontWeight: 600,
+                                  color: "#059669", 
+                                  backgroundColor: "#dcfce7",
+                                  padding: "4px 10px",
+                                  borderRadius: 4,
+                                  minWidth: 40,
+                                  textAlign: "center"
+                                }}>
+                                  DR {backlink.domainRating}
+                                </div>
+                              )}
                             </div>
-                          )}
-                        </div>
-                      ))}
+                          </div>
+                        )
+                      })}
                     </div>
                   </>
                 ) : (
