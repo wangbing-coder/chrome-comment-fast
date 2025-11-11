@@ -251,6 +251,8 @@ const SidePanel = ({ onClose }: SidePanelProps = {}) => {
   const [backlinksError, setBacklinksError] = useState<string | null>(null)
   const [checkLoading, setCheckLoading] = useState(false)
   const [checkResults, setCheckResults] = useState<{[key: string]: {exists: boolean, canSubmit: boolean}} | null>(null)
+  const [savingUrls, setSavingUrls] = useState<Set<string>>(new Set())
+  const [savedUrls, setSavedUrls] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     void (async () => {
@@ -643,6 +645,57 @@ const SidePanel = ({ onClose }: SidePanelProps = {}) => {
       setCheckLoading(false)
     }
   }, [backlinksData])
+
+  // Save single backlink to database
+  const handleSaveBacklink = useCallback(async (backlink: any) => {
+    const url = backlink.urlFrom
+    
+    // Mark as saving
+    setSavingUrls(prev => new Set(prev).add(url))
+    setBacklinksError(null)
+
+    try {
+      const link = {
+        url: url,
+        title: backlink.title || "",
+        description: "",
+        dr: backlink.domainRating || 0,
+        tags: ["backlink"],
+        notes: `Found via Ahrefs backlink checker`
+      }
+
+      const response = await fetch("https://link-manager.leobing2023.workers.dev/api/external/save", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ links: [link] })
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(`Failed to save: ${errorText}`)
+      }
+
+      const data = await response.json()
+      
+      // Mark as saved
+      setSavedUrls(prev => new Set(prev).add(url))
+      setSavingUrls(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(url)
+        return newSet
+      })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      setBacklinksError(message)
+      setSavingUrls(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(url)
+        return newSet
+      })
+    }
+  }, [])
 
   return (
     <div style={containerStyle}>
@@ -1083,7 +1136,6 @@ const SidePanel = ({ onClose }: SidePanelProps = {}) => {
                           ...secondaryButtonStyle,
                           padding: "6px 16px",
                           fontSize: 12,
-                          marginLeft: 12,
                           backgroundColor: checkLoading ? "#a5b4fc" : (checkResults ? "#10b981" : "#4f46e5"),
                           color: "white",
                           borderColor: checkLoading ? "#a5b4fc" : (checkResults ? "#10b981" : "#4f46e5"),
@@ -1091,7 +1143,7 @@ const SidePanel = ({ onClose }: SidePanelProps = {}) => {
                         }}
                         disabled={checkLoading}
                         onClick={handleCheckBacklinks}>
-                        {checkLoading ? "Checking..." : (checkResults ? "✓ Checked" : "Check Database")}
+                        {checkLoading ? "Checking..." : (checkResults ? "✓ Checked" : "Check")}
                       </button>
                     </div>
                     
@@ -1132,6 +1184,35 @@ const SidePanel = ({ onClose }: SidePanelProps = {}) => {
                               {backlink.urlFrom}
                             </a>
                             <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+                              {checkResult && isNew && !savedUrls.has(backlink.urlFrom) && (
+                                <button
+                                  style={{
+                                    ...secondaryButtonStyle,
+                                    padding: "4px 12px",
+                                    fontSize: 11,
+                                    backgroundColor: savingUrls.has(backlink.urlFrom) ? "#a5b4fc" : "#10b981",
+                                    color: "white",
+                                    borderColor: savingUrls.has(backlink.urlFrom) ? "#a5b4fc" : "#10b981",
+                                    cursor: savingUrls.has(backlink.urlFrom) ? "not-allowed" : "pointer",
+                                    minWidth: 60
+                                  }}
+                                  disabled={savingUrls.has(backlink.urlFrom)}
+                                  onClick={() => handleSaveBacklink(backlink)}>
+                                  {savingUrls.has(backlink.urlFrom) ? "..." : "Save"}
+                                </button>
+                              )}
+                              {savedUrls.has(backlink.urlFrom) && (
+                                <div style={{
+                                  fontSize: 11,
+                                  fontWeight: 600,
+                                  color: "#059669",
+                                  backgroundColor: "#dcfce7",
+                                  padding: "4px 12px",
+                                  borderRadius: 4
+                                }}>
+                                  Saved
+                                </div>
+                              )}
                               {backlink.domainRating !== undefined && (
                                 <div style={{ 
                                   fontSize: 12, 
