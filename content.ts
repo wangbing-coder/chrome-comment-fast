@@ -10,11 +10,9 @@ export const config: PlasmoCSConfig = {
 }
 
 const PANEL_ID = "comment-fast-floating-panel"
-const BACKDROP_ID = "comment-fast-floating-backdrop"
 
 const removePanel = () => {
   const panel = document.getElementById(PANEL_ID)
-  const backdrop = document.getElementById(BACKDROP_ID)
   
   if (panel) {
     const root = (panel as any)._reactRoot
@@ -22,9 +20,6 @@ const removePanel = () => {
       root.unmount()
     }
     panel.remove()
-  }
-  if (backdrop) {
-    backdrop.remove()
   }
 }
 
@@ -35,45 +30,73 @@ const createFloatingPanel = async () => {
     return
   }
 
-  // Create backdrop
-  const backdrop = document.createElement("div")
-  backdrop.id = BACKDROP_ID
-  backdrop.style.cssText = `
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
-    background: rgba(0, 0, 0, 0.2);
-    z-index: 2147483646;
-    pointer-events: none;
-  `
-  // Removed: backdrop.addEventListener("click", removePanel)
-
-  // Create container
-  const container = document.createElement("div")
-  container.id = PANEL_ID
-  container.style.cssText = `
+  // Create Shadow DOM host container for complete style isolation
+  const shadowHost = document.createElement("div")
+  shadowHost.id = PANEL_ID
+  // Shadow DOM will handle style isolation, so we only set essential positioning styles
+  shadowHost.style.cssText = `
     position: fixed;
     top: 0;
     right: 0;
     width: 480px;
     height: 100vh;
     z-index: 2147483647;
-    background: white;
-    box-shadow: -2px 0 8px rgba(0, 0, 0, 0.15);
-    font-family: system-ui, -apple-system, sans-serif;
-    overflow: hidden;
     pointer-events: auto;
   `
 
-  document.body.appendChild(backdrop)
-  document.body.appendChild(container)
+  // Create Shadow DOM root for style isolation
+  const shadowRoot = shadowHost.attachShadow({ mode: 'open' })
+  
+  // Create style element with CSS reset and base styles for complete isolation
+  const style = document.createElement("style")
+  style.textContent = `
+    /* CSS reset to prevent page styles from affecting the plugin */
+    :host {
+      all: initial;
+      display: block;
+      position: fixed;
+      top: 0;
+      right: 0;
+      width: 480px;
+      height: 100vh;
+      z-index: 2147483647;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      color: #1f2933;
+      background: white;
+      box-shadow: -2px 0 8px rgba(0, 0, 0, 0.15);
+      overflow: hidden;
+      direction: ltr;
+      text-align: left;
+    }
+    
+    #root {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: row;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      font-size: 14px;
+      color: #1f2933;
+      overflow: hidden;
+      margin: 0;
+      padding: 0;
+    }
+  `
+  shadowRoot.appendChild(style)
+
+  // Create React root container inside Shadow DOM
+  const container = document.createElement("div")
+  container.id = "root"
+  shadowRoot.appendChild(container)
+
+  document.body.appendChild(shadowHost)
 
   // Render React component
   try {
     const root = createRoot(container)
-    ;(container as any)._reactRoot = root
+    ;(shadowHost as any)._reactRoot = root
     root.render(React.createElement(SidePanel, { onClose: removePanel }))
   } catch (error) {
     console.error("Failed to render React component:", error)
