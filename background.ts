@@ -106,7 +106,6 @@ const getToken = async (domain: string, capsolverApiKey: string): Promise<string
   const siteKey = "0x4AAAAAAAAzi9ITzSN9xKMi"
   const siteUrl = `https://ahrefs.com/backlink-checker/?input=${domain}&mode=subdomains`
   
-  if (DEBUG) console.log("🔵 Creating CapSolver task for domain:", domain)
   
   const payload = {
     clientKey: capsolverApiKey,
@@ -126,7 +125,6 @@ const getToken = async (domain: string, capsolverApiKey: string): Promise<string
     body: JSON.stringify(payload)
   })
   const resp = await res.json()
-  if (DEBUG) console.log("CapSolver createTask response:", resp)
   
   const taskId = resp.taskId
 
@@ -134,7 +132,6 @@ const getToken = async (domain: string, capsolverApiKey: string): Promise<string
     throw new Error(`Failed to create CapSolver task: ${JSON.stringify(resp)}`)
   }
   
-  if (DEBUG) console.log("✅ Task created, taskId:", taskId)
 
   // Poll for result
   let attempts = 0
@@ -170,7 +167,13 @@ const getToken = async (domain: string, capsolverApiKey: string): Promise<string
   throw new Error("CapSolver timeout after 60 seconds")
 }
 
-const getSignature = async (token: string, domain: string): Promise<{ signature: string; validUntil: number }> => {
+const getSignature = async (token: string, domain: string): Promise<{ 
+  signature: string
+  validUntil: string
+  domainRating?: number
+  refdomains?: number
+  backlinks?: number
+}> => {
   const url = "https://ahrefs.com/v4/stGetFreeBacklinksOverview"
   const payload = {
     captcha: token,
@@ -178,7 +181,6 @@ const getSignature = async (token: string, domain: string): Promise<{ signature:
     url: domain
   }
 
-  if (DEBUG) console.log("🔵 Requesting signature from Ahrefs with payload:", payload)
 
   const response = await fetch(url, {
     method: "POST",
@@ -193,20 +195,41 @@ const getSignature = async (token: string, domain: string): Promise<{ signature:
   }
 
   const data = await response.json()
-  if (DEBUG) console.log("✅ Signature response received:", JSON.stringify(data).substring(0, 200))
   
   if (Array.isArray(data) && data.length > 1) {
     const signature = data[1].signedInput.signature
     const validUntil = data[1].signedInput.input.validUntil
-    if (DEBUG) console.log("✅ Extracted signature and validUntil")
-    return { signature, validUntil }
+    
+    // Extract domain metrics from data[1].data
+    const metricsData = data[1].data || {}
+    const domainRating = metricsData.domainRating
+    const refdomains = metricsData.refdomains
+    const backlinks = metricsData.backlinks
+    
+    if (DEBUG) {
+      console.log("📋 Extracted metrics:", {
+        domainRating,
+        refdomains,
+        backlinks,
+        validUntil,
+        metricsData
+      })
+    }
+    
+    return { 
+      signature, 
+      validUntil,
+      domainRating,
+      refdomains,
+      backlinks
+    }
   }
   
   console.error("❌ Invalid signature response format:", data)
   throw new Error(`Invalid signature response format: ${JSON.stringify(data)}`)
 }
 
-const getBacklinks = async (signature: string, validUntil: number, domain: string): Promise<any> => {
+const getBacklinks = async (signature: string, validUntil: string, domain: string): Promise<any> => {
   const url = "https://ahrefs.com/v4/stGetFreeBacklinksList"
   const payload = {
     reportType: "TopBacklinks",
@@ -220,7 +243,6 @@ const getBacklinks = async (signature: string, validUntil: number, domain: strin
     }
   }
 
-  if (DEBUG) console.log("🔵 Requesting backlinks from Ahrefs")
 
   const response = await fetch(url, {
     method: "POST",
@@ -235,16 +257,6 @@ const getBacklinks = async (signature: string, validUntil: number, domain: strin
   }
 
   const data = await response.json()
-  if (DEBUG) console.log("✅ Backlinks response received:", JSON.stringify(data).substring(0, 300))
-  
-  // Log the structure to help debug
-  if (data && data[1] && data[1].backlinks) {
-    if (DEBUG) console.log(`📊 Found ${data[1].backlinks?.length || 0} backlinks`)
-  } else if (data && data[1] && data[1].topBacklinks) {
-    if (DEBUG) console.log(`📊 Found ${data[1].topBacklinks.backlinks?.length || 0} backlinks (nested)`)
-  } else {
-    if (DEBUG) console.warn("⚠️ Unexpected data structure. Keys:", Object.keys(data))
-  }
   
   return data
 }
@@ -285,29 +297,45 @@ chrome.runtime.onMessage.addListener((message: BackgroundMessage, _sender, sendR
 
         // Clean the domain
         domain = cleanDomain(domain)
-        if (DEBUG) console.log("🔵 Fetching backlinks for cleaned domain:", domain)
 
         // Step 1: Get token
-        if (DEBUG) console.log("Step 1: Getting CapSolver token...")
         const token = await getToken(domain, capsolverApiKey)
-        if (DEBUG) console.log("✅ Token received:", token.substring(0, 20) + "...")
 
         // Step 2: Get signature
-        if (DEBUG) console.log("Step 2: Getting signature...")
-        const { signature, validUntil } = await getSignature(token, domain)
-        if (DEBUG) console.log("✅ Signature received, validUntil value:", validUntil, "type:", typeof validUntil)
-        try {
-          if (DEBUG) console.log("Valid until:", new Date(validUntil * 1000).toISOString())
-        } catch (e) {
-          if (DEBUG) console.log("Valid until (raw):", validUntil)
-        }
+        const { signature, validUntil, domainRating, refdomains, backlinks } = await getSignature(token, domain)
 
         // Step 3: Get backlinks
-        if (DEBUG) console.log("Step 3: Getting backlinks...")
         const data = await getBacklinks(signature, validUntil, domain)
-        if (DEBUG) console.log("✅ Backlinks data structure:", Object.keys(data))
 
-        sendResponse({ success: true, data })
+        // Build domainMetrics object - always include if values exist
+        const domainMetrics: {
+          domainRating?: number
+          refdomains?: number
+          backlinks?: number
+        } = {}
+        
+        // Include values if they exist (including 0)
+        if (typeof domainRating === 'number') {
+          domainMetrics.domainRating = domainRating
+        }
+        if (typeof refdomains === 'number') {
+          domainMetrics.refdomains = refdomains
+        }
+        if (typeof backlinks === 'number') {
+          domainMetrics.backlinks = backlinks
+        }
+        
+        // Build response with domainMetrics if available
+        const response: any = { 
+          success: true, 
+          data
+        }
+        
+        if (Object.keys(domainMetrics).length > 0) {
+          response.domainMetrics = domainMetrics
+        }
+        
+        sendResponse(response)
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         console.error("❌ Backlinks fetch error:", message)
@@ -415,34 +443,27 @@ chrome.runtime.onMessage.addListener((message: BackgroundMessage, _sender, sendR
 
 // Handle extension icon click - toggle floating panel
 chrome.action.onClicked.addListener(async (tab) => {
-  if (DEBUG) console.log("🔵 Extension icon clicked, tab:", tab.url)
-  
-  if (!tab.id) {
-    if (DEBUG) console.warn("⚠️ No tab ID available")
+  if (!tab?.id) {
     return
   }
 
-  try {
-    // Check if page supports content scripts
-    if (tab.url?.startsWith("chrome://") || 
-        tab.url?.startsWith("chrome-extension://") || 
-        tab.url?.startsWith("edge://") ||
-        tab.url?.startsWith("about:") ||
-        tab.url?.startsWith("moz-extension://")) {
-      if (DEBUG) console.warn("⚠️ Cannot inject floating panel on this page type:", tab.url)
-      return
-    }
+  // Check if page supports content scripts
+  const url = tab.url || ""
+  if (url.startsWith("chrome://") || 
+      url.startsWith("chrome-extension://") || 
+      url.startsWith("edge://") ||
+      url.startsWith("about:") ||
+      url.startsWith("moz-extension://")) {
+    return
+  }
 
-    if (DEBUG) console.log("✅ Page supports content scripts, sending message to toggle panel")
-    
-    // Send message to content script to toggle panel
+  // Send message to content script to toggle panel
+  try {
     await chrome.tabs.sendMessage(tab.id, {
       type: "TOGGLE_FLOATING_PANEL"
     })
-    
-    if (DEBUG) console.log("✅ Toggle panel message sent successfully")
   } catch (error) {
-    console.error("❌ Failed to toggle floating panel:", error)
-    if (DEBUG) console.log("💡 Try refreshing the page and clicking the icon again")
+    // Silently fail - user can refresh page and try again
+    console.error("Failed to toggle panel. Please refresh the page and try again.")
   }
 })

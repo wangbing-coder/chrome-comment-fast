@@ -43,6 +43,11 @@ const SidePanel = ({ onClose }: SidePanelProps = {}) => {
   const [backlinksDomain, setBacklinksDomain] = useState("")
   const [backlinksLoading, setBacklinksLoading] = useState(false)
   const [backlinksData, setBacklinksData] = useState<any>(null)
+  const [backlinksDomainMetrics, setBacklinksDomainMetrics] = useState<{
+    domainRating?: number
+    refdomains?: number
+    backlinks?: number
+  } | null>(null)
   const [backlinksError, setBacklinksError] = useState<string | null>(null)
   const [checkLoading, setCheckLoading] = useState(false)
   const [checkResults, setCheckResults] = useState<{[key: string]: {exists: boolean, canSubmit: boolean}} | null>(null)
@@ -222,6 +227,7 @@ const SidePanel = ({ onClose }: SidePanelProps = {}) => {
     setBacklinksLoading(true)
     setBacklinksError(null)
     setBacklinksData(null)
+    setBacklinksDomainMetrics(null)
     setCheckResults(null)
 
     try {
@@ -238,6 +244,11 @@ const SidePanel = ({ onClose }: SidePanelProps = {}) => {
       }
 
       setBacklinksData(response.data)
+      if (DEBUG) {
+        console.log("📋 Received domainMetrics:", response.domainMetrics)
+        console.log("📋 Full response:", response)
+      }
+      setBacklinksDomainMetrics(response.domainMetrics || null)
       setBacklinksLoading(false)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
@@ -388,6 +399,7 @@ const SidePanel = ({ onClose }: SidePanelProps = {}) => {
             backlinksLoading={backlinksLoading}
             backlinksError={backlinksError}
             backlinksData={backlinksData}
+            backlinksDomainMetrics={backlinksDomainMetrics}
             checkLoading={checkLoading}
             checkResults={checkResults}
             savingUrls={savingUrls}

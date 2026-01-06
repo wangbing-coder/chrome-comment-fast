@@ -7,6 +7,11 @@ type BacklinksTabProps = {
   backlinksLoading: boolean
   backlinksError: string | null
   backlinksData: any
+  backlinksDomainMetrics?: {
+    domainRating?: number
+    refdomains?: number
+    backlinks?: number
+  } | null
   checkLoading: boolean
   checkResults: {[key: string]: {exists: boolean, canSubmit: boolean}} | null
   savingUrls: Set<string>
@@ -22,6 +27,7 @@ export const BacklinksTab = ({
   backlinksLoading,
   backlinksError,
   backlinksData,
+  backlinksDomainMetrics,
   checkLoading,
   checkResults,
   savingUrls,
@@ -63,6 +69,57 @@ export const BacklinksTab = ({
         </button>
 
         {backlinksError && <p style={errorStyle}>{backlinksError}</p>}
+
+        {backlinksDomainMetrics && (
+          <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>Domain Metrics</h3>
+            <div style={{
+              display: "flex",
+              gap: 12,
+              padding: "12px",
+              backgroundColor: "#f8fafc",
+              borderRadius: 6,
+              border: "1px solid #e2e8f0",
+              flexWrap: "wrap"
+            }}>
+              {(backlinksDomainMetrics.domainRating !== undefined && backlinksDomainMetrics.domainRating !== null) ? (
+                <div style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6
+                }}>
+                  <span style={{ fontSize: 12, color: "#64748b", fontWeight: 500 }}>Domain Rating:</span>
+                  <span style={{ fontSize: 14, color: "#059669", fontWeight: 600 }}>DR {backlinksDomainMetrics.domainRating}</span>
+                </div>
+              ) : null}
+              {(backlinksDomainMetrics.refdomains !== undefined && backlinksDomainMetrics.refdomains !== null) ? (
+                <div style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6
+                }}>
+                  <span style={{ fontSize: 12, color: "#64748b", fontWeight: 500 }}>Ref Domains:</span>
+                  <span style={{ fontSize: 14, color: "#3b82f6", fontWeight: 600 }}>{backlinksDomainMetrics.refdomains.toLocaleString()}</span>
+                </div>
+              ) : null}
+              {(backlinksDomainMetrics.backlinks !== undefined && backlinksDomainMetrics.backlinks !== null) ? (
+                <div style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6
+                }}>
+                  <span style={{ fontSize: 12, color: "#64748b", fontWeight: 500 }}>Total Backlinks:</span>
+                  <span style={{ fontSize: 14, color: "#3b82f6", fontWeight: 600 }}>{backlinksDomainMetrics.backlinks.toLocaleString()}</span>
+                </div>
+              ) : null}
+              {(!backlinksDomainMetrics.domainRating && !backlinksDomainMetrics.refdomains && !backlinksDomainMetrics.backlinks) && (
+                <div style={{ fontSize: 12, color: "#64748b", fontStyle: "italic" }}>
+                  No domain metrics available
+                </div>
+              )}
+            </div>
+          </section>
+        )}
 
         {backlinksData && (
           <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
