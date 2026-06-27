@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from "react"
-import { DEBUG } from "../config"
-import { containerStyle } from "./styles"
-import { Sidebar, type TabType } from "./Sidebar"
+
+import { DEBUG, DEFAULT_LINK_MANAGER_API_BASE } from "../config"
+import { checkLinks, saveLinks } from "../linkManagerClient"
+import { BacklinksTab } from "./BacklinksTab"
 import { Header } from "./Header"
 import { HomeTab, type DomainInfo } from "./HomeTab"
-import { BacklinksTab } from "./BacklinksTab"
 import { SettingsTab } from "./SettingsTab"
-import { extractContentSnippet, extractArticleStructure } from "./utils"
+import { Sidebar, type TabType } from "./Sidebar"
+import { containerStyle } from "./styles"
+import { extractArticleStructure, extractContentSnippet } from "./utils"
 
 type GenerationStatus = "idle" | "loading" | "success" | "error"
 
@@ -19,25 +21,34 @@ const SidePanel = ({ onClose }: SidePanelProps = {}) => {
   useEffect(() => {
     if (!DEBUG) return
     const errorHandler = (event: ErrorEvent) => {
-      console.error("🔴 Global error caught:", event.error, event.message, event.filename, event.lineno)
+      console.error(
+        "🔴 Global error caught:",
+        event.error,
+        event.message,
+        event.filename,
+        event.lineno
+      )
     }
-    window.addEventListener('error', errorHandler)
-    return () => window.removeEventListener('error', errorHandler)
+    window.addEventListener("error", errorHandler)
+    return () => window.removeEventListener("error", errorHandler)
   }, [])
-  
+
   const [activeTab, setActiveTab] = useState<TabType>("home")
   const [apiKey, setApiKey] = useState("")
   const [model, setModel] = useState("anthropic/claude-3-haiku-20240307")
   const [commentLength, setCommentLength] = useState("medium")
+  const [linkManagerApiBase, setLinkManagerApiBase] = useState(
+    DEFAULT_LINK_MANAGER_API_BASE
+  )
   const [comment, setComment] = useState("")
   const [status, setStatus] = useState<GenerationStatus>("idle")
   const [error, setError] = useState<string | null>(null)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
   const [domains, setDomains] = useState<DomainInfo[]>([])
-  const [copyStatus, setCopyStatus] = useState<{[key: string]: string}>({})
+  const [copyStatus, setCopyStatus] = useState<{ [key: string]: string }>({})
   const [showCopyToast, setShowCopyToast] = useState<string>("")
   const [currentDomain, setCurrentDomain] = useState<string>("")
-  
+
   // Backlinks states
   const [capsolverApiKey, setCapsolverApiKey] = useState("")
   const [backlinksDomain, setBacklinksDomain] = useState("")
@@ -50,24 +61,37 @@ const SidePanel = ({ onClose }: SidePanelProps = {}) => {
   } | null>(null)
   const [backlinksError, setBacklinksError] = useState<string | null>(null)
   const [checkLoading, setCheckLoading] = useState(false)
-  const [checkResults, setCheckResults] = useState<{[key: string]: {exists: boolean, canSubmit: boolean}} | null>(null)
+  const [checkResults, setCheckResults] = useState<{
+    [key: string]: { exists: boolean; canSubmit: boolean }
+  } | null>(null)
   const [savingUrls, setSavingUrls] = useState<Set<string>>(new Set())
   const [savedUrls, setSavedUrls] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     void (async () => {
-      const { aiApiKey, aiModel, commentLength: savedLength, userDomains, capsolverApiKey: savedCapsolverKey } = await chrome.storage.sync.get([
+      const {
+        aiApiKey,
+        aiModel,
+        commentLength: savedLength,
+        userDomains,
+        capsolverApiKey: savedCapsolverKey,
+        linkManagerApiBase: savedLinkManagerApiBase
+      } = await chrome.storage.sync.get([
         "aiApiKey",
         "aiModel",
         "commentLength",
         "userDomains",
-        "capsolverApiKey"
+        "capsolverApiKey",
+        "linkManagerApiBase"
       ])
       if (aiApiKey) setApiKey(aiApiKey)
       if (aiModel) setModel(aiModel)
       if (savedLength) setCommentLength(savedLength)
       if (userDomains) setDomains(userDomains)
       if (savedCapsolverKey) setCapsolverApiKey(savedCapsolverKey)
+      if (savedLinkManagerApiBase) {
+        setLinkManagerApiBase(savedLinkManagerApiBase)
+      }
     })()
   }, [])
 
@@ -80,16 +104,35 @@ const SidePanel = ({ onClose }: SidePanelProps = {}) => {
       setSaveMessage("Please enter Model")
       return
     }
+    if (!linkManagerApiBase.trim()) {
+      setSaveMessage("Please enter Link Manager API URL")
+      return
+    }
+
+    let normalizedLinkManagerApiBase: string
+    try {
+      const parsed = new URL(linkManagerApiBase.trim())
+      if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+        throw new Error("Invalid protocol")
+      }
+      normalizedLinkManagerApiBase =
+        parsed.origin + parsed.pathname.replace(/\/+$/g, "")
+    } catch {
+      setSaveMessage("Please enter a valid Link Manager API URL")
+      return
+    }
 
     await chrome.storage.sync.set({
       aiApiKey: apiKey.trim(),
       aiModel: model.trim(),
       commentLength: commentLength,
-      capsolverApiKey: capsolverApiKey.trim()
+      capsolverApiKey: capsolverApiKey.trim(),
+      linkManagerApiBase: normalizedLinkManagerApiBase
     })
+    setLinkManagerApiBase(normalizedLinkManagerApiBase)
     setSaveMessage("Settings saved successfully")
     setTimeout(() => setSaveMessage(null), 3000)
-  }, [apiKey, model, commentLength, capsolverApiKey])
+  }, [apiKey, model, commentLength, capsolverApiKey, linkManagerApiBase])
 
   const handleGenerate = useCallback(async () => {
     const { aiApiKey, aiModel, commentLength } = await chrome.storage.sync.get([
@@ -109,13 +152,17 @@ const SidePanel = ({ onClose }: SidePanelProps = {}) => {
 
     try {
       const currentUrl = window.location.href
-      
-      if (currentUrl.startsWith("chrome://") || 
-          currentUrl.startsWith("chrome-extension://") || 
-          currentUrl.startsWith("edge://") ||
-          currentUrl.startsWith("about:") ||
-          currentUrl.startsWith("moz-extension://")) {
-        throw new Error("Cannot generate comments on this page type. Please navigate to a regular webpage.")
+
+      if (
+        currentUrl.startsWith("chrome://") ||
+        currentUrl.startsWith("chrome-extension://") ||
+        currentUrl.startsWith("edge://") ||
+        currentUrl.startsWith("about:") ||
+        currentUrl.startsWith("moz-extension://")
+      ) {
+        throw new Error(
+          "Cannot generate comments on this page type. Please navigate to a regular webpage."
+        )
       }
 
       try {
@@ -152,7 +199,9 @@ const SidePanel = ({ onClose }: SidePanelProps = {}) => {
         })
       } catch (runtimeError) {
         console.error("❌ Background script connection failed:", runtimeError)
-        throw new Error(`Could not establish connection. Please refresh the page and try again.`)
+        throw new Error(
+          `Could not establish connection. Please refresh the page and try again.`
+        )
       }
 
       if (!response?.success) {
@@ -173,9 +222,9 @@ const SidePanel = ({ onClose }: SidePanelProps = {}) => {
   const handleCopyComment = useCallback(() => {
     if (comment) {
       navigator.clipboard.writeText(comment)
-      setCopyStatus(prev => ({ ...prev, comment: "Copied!" }))
+      setCopyStatus((prev) => ({ ...prev, comment: "Copied!" }))
       setTimeout(() => {
-        setCopyStatus(prev => ({ ...prev, comment: "" }))
+        setCopyStatus((prev) => ({ ...prev, comment: "" }))
       }, 2000)
     }
   }, [comment])
@@ -190,34 +239,48 @@ const SidePanel = ({ onClose }: SidePanelProps = {}) => {
 
   // Backlinks functionality
   const handleFetchBacklinks = useCallback(async () => {
-    if (DEBUG) console.log("🔵 handleFetchBacklinks called, backlinksDomain:", backlinksDomain)
+    if (DEBUG)
+      console.log(
+        "🔵 handleFetchBacklinks called, backlinksDomain:",
+        backlinksDomain
+      )
     let domainToFetch = backlinksDomain.trim()
-    
+
     if (!domainToFetch) {
-      if (DEBUG) console.log("🔵 No domain entered, trying to get current page domain...")
+      if (DEBUG)
+        console.log(
+          "🔵 No domain entered, trying to get current page domain..."
+        )
       try {
-        const response = await chrome.runtime.sendMessage({ type: "GET_CURRENT_TAB" })
+        const response = await chrome.runtime.sendMessage({
+          type: "GET_CURRENT_TAB"
+        })
         if (DEBUG) console.log("🔵 Current tab response:", response)
-        
+
         if (response?.success && response.domain) {
           domainToFetch = response.domain
           if (DEBUG) console.log("✅ Extracted domain:", domainToFetch)
           setBacklinksDomain(domainToFetch)
         } else {
           console.error("❌ Failed to get current tab:", response?.error)
-          setBacklinksError(response?.error || "Failed to get current page domain")
+          setBacklinksError(
+            response?.error || "Failed to get current page domain"
+          )
           return
         }
       } catch (err) {
         console.error("❌ Error getting current domain:", err)
-        setBacklinksError(`Error: ${err instanceof Error ? err.message : String(err)}`)
+        setBacklinksError(
+          `Error: ${err instanceof Error ? err.message : String(err)}`
+        )
         return
       }
     }
-    
+
     if (DEBUG) console.log("🔵 Domain to fetch:", domainToFetch)
 
-    const { capsolverApiKey: savedCapsolverKey } = await chrome.storage.sync.get(["capsolverApiKey"])
+    const { capsolverApiKey: savedCapsolverKey } =
+      await chrome.storage.sync.get(["capsolverApiKey"])
 
     if (!savedCapsolverKey?.trim()) {
       setBacklinksError("Please configure CapSolver API Key in Settings")
@@ -260,7 +323,8 @@ const SidePanel = ({ onClose }: SidePanelProps = {}) => {
   const handleCheckBacklinks = useCallback(async () => {
     if (!backlinksData) return
 
-    const backlinks = backlinksData[1]?.backlinks || backlinksData[1]?.topBacklinks?.backlinks
+    const backlinks =
+      backlinksData[1]?.backlinks || backlinksData[1]?.topBacklinks?.backlinks
     if (!backlinks || backlinks.length === 0) {
       setBacklinksError("No backlinks to check")
       return
@@ -271,23 +335,12 @@ const SidePanel = ({ onClose }: SidePanelProps = {}) => {
 
     try {
       const urls = backlinks.map((bl: any) => bl.urlFrom)
-      
-      const response = await fetch("https://link-manager.leobing2023.workers.dev/api/external/check", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ urls })
-      })
 
-      if (!response.ok) {
-        const errorText = await response.text()
-        throw new Error(`Failed to check backlinks: ${errorText}`)
-      }
+      const data = await checkLinks(urls)
 
-      const data = await response.json()
-      
-      const resultsMap: {[key: string]: {exists: boolean, canSubmit: boolean}} = {}
+      const resultsMap: {
+        [key: string]: { exists: boolean; canSubmit: boolean }
+      } = {}
       data.results.forEach((result: any) => {
         resultsMap[result.url] = {
           exists: result.exists,
@@ -306,8 +359,8 @@ const SidePanel = ({ onClose }: SidePanelProps = {}) => {
 
   const handleSaveBacklink = useCallback(async (backlink: any) => {
     const url = backlink.urlFrom
-    
-    setSavingUrls(prev => new Set(prev).add(url))
+
+    setSavingUrls((prev) => new Set(prev).add(url))
     setBacklinksError(null)
 
     try {
@@ -320,23 +373,19 @@ const SidePanel = ({ onClose }: SidePanelProps = {}) => {
         notes: `Found via Ahrefs backlink checker`
       }
 
-      const response = await fetch("https://link-manager.leobing2023.workers.dev/api/external/save", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ links: [link] })
-      })
+      const data = await saveLinks([link])
 
-      if (!response.ok) {
-        const errorText = await response.text()
-        throw new Error(`Failed to save: ${errorText}`)
+      const saved = data.results.some(
+        (result) => result.url === url && result.status !== "error"
+      )
+
+      if (!saved) {
+        const failed = data.results.find((result) => result.url === url)
+        throw new Error(failed?.message || "Failed to save backlink")
       }
 
-      const data = await response.json()
-      
-      setSavedUrls(prev => new Set(prev).add(url))
-      setSavingUrls(prev => {
+      setSavedUrls((prev) => new Set(prev).add(url))
+      setSavingUrls((prev) => {
         const newSet = new Set(prev)
         newSet.delete(url)
         return newSet
@@ -344,7 +393,7 @@ const SidePanel = ({ onClose }: SidePanelProps = {}) => {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       setBacklinksError(message)
-      setSavingUrls(prev => {
+      setSavingUrls((prev) => {
         const newSet = new Set(prev)
         newSet.delete(url)
         return newSet
@@ -355,26 +404,27 @@ const SidePanel = ({ onClose }: SidePanelProps = {}) => {
   return (
     <div style={containerStyle}>
       {showCopyToast && (
-        <div style={{
-          position: "absolute",
-          top: "50%",
-          left: "50%",
-          transform: "translate(-50%, -50%)",
-          backgroundColor: "rgba(59, 130, 246, 0.9)",
-          color: "white",
-          padding: "10px 16px",
-          borderRadius: 6,
-          fontSize: 12,
-          fontWeight: 500,
-          zIndex: 1000,
-          boxShadow: "0 2px 8px rgba(0, 0, 0, 0.1)",
-          backdropFilter: "blur(2px)",
-          border: "1px solid rgba(255, 255, 255, 0.2)"
-        }}>
+        <div
+          style={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            backgroundColor: "rgba(59, 130, 246, 0.9)",
+            color: "white",
+            padding: "10px 16px",
+            borderRadius: 6,
+            fontSize: 12,
+            fontWeight: 500,
+            zIndex: 1000,
+            boxShadow: "0 2px 8px rgba(0, 0, 0, 0.1)",
+            backdropFilter: "blur(2px)",
+            border: "1px solid rgba(255, 255, 255, 0.2)"
+          }}>
           {showCopyToast}
         </div>
       )}
-      
+
       <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
 
       <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
@@ -415,11 +465,13 @@ const SidePanel = ({ onClose }: SidePanelProps = {}) => {
             model={model}
             commentLength={commentLength}
             capsolverApiKey={capsolverApiKey}
+            linkManagerApiBase={linkManagerApiBase}
             saveMessage={saveMessage}
             onApiKeyChange={setApiKey}
             onModelChange={setModel}
             onCommentLengthChange={setCommentLength}
             onCapsolverApiKeyChange={setCapsolverApiKey}
+            onLinkManagerApiBaseChange={setLinkManagerApiBase}
             onSave={handleSaveSettings}
           />
         )}

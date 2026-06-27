@@ -1,15 +1,24 @@
-import { contentStyle, labelStyle, inputStyle, buttonStyle, errorStyle, successStyle } from "./styles"
+import {
+  buttonStyle,
+  contentStyle,
+  errorStyle,
+  inputStyle,
+  labelStyle,
+  successStyle
+} from "./styles"
 
 type SettingsTabProps = {
   apiKey: string
   model: string
   commentLength: string
   capsolverApiKey: string
+  linkManagerApiBase: string
   saveMessage: string | null
   onApiKeyChange: (value: string) => void
   onModelChange: (value: string) => void
   onCommentLengthChange: (value: string) => void
   onCapsolverApiKeyChange: (value: string) => void
+  onLinkManagerApiBaseChange: (value: string) => void
   onSave: () => void
 }
 
@@ -18,11 +27,13 @@ export const SettingsTab = ({
   model,
   commentLength,
   capsolverApiKey,
+  linkManagerApiBase,
   saveMessage,
   onApiKeyChange,
   onModelChange,
   onCommentLengthChange,
   onCapsolverApiKeyChange,
+  onLinkManagerApiBaseChange,
   onSave
 }: SettingsTabProps) => {
   return (
@@ -39,7 +50,10 @@ export const SettingsTab = ({
           />
           <span style={{ fontSize: 11, color: "#64748b" }}>
             OpenRouter API key from{" "}
-            <a href="https://openrouter.ai/keys" target="_blank" rel="noreferrer">
+            <a
+              href="https://openrouter.ai/keys"
+              target="_blank"
+              rel="noreferrer">
               openrouter.ai/keys
             </a>
           </span>
@@ -85,10 +99,28 @@ export const SettingsTab = ({
           />
           <span style={{ fontSize: 11, color: "#64748b" }}>
             CapSolver API key from{" "}
-            <a href="https://www.capsolver.com" target="_blank" rel="noreferrer">
+            <a
+              href="https://www.capsolver.com"
+              target="_blank"
+              rel="noreferrer">
               capsolver.com
-            </a>
-            {" "}for backlinks feature
+            </a>{" "}
+            for backlinks feature
+          </span>
+        </label>
+
+        <label style={labelStyle}>
+          <span>Link Manager API</span>
+          <input
+            style={inputStyle}
+            type="url"
+            placeholder="https://tanstack-link-manager.leobing2023.workers.dev"
+            value={linkManagerApiBase}
+            onChange={(event) => onLinkManagerApiBaseChange(event.target.value)}
+          />
+          <span style={{ fontSize: 11, color: "#64748b" }}>
+            Backend used for backlink check/save. Keep the default in
+            production; change it only when testing a migrated backend.
           </span>
         </label>
 
@@ -96,7 +128,12 @@ export const SettingsTab = ({
           Save Settings
         </button>
 
-        {saveMessage ? <p style={saveMessage.includes("success") ? successStyle : errorStyle}>{saveMessage}</p> : null}
+        {saveMessage ? (
+          <p
+            style={saveMessage.includes("success") ? successStyle : errorStyle}>
+            {saveMessage}
+          </p>
+        ) : null}
       </section>
 
       <footer style={{ marginTop: "auto", paddingTop: 16 }}>
@@ -120,4 +157,3 @@ export const SettingsTab = ({
     </div>
   )
 }
-

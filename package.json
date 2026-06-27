@@ -31,10 +31,11 @@
     ],
     "host_permissions": [
       "<all_urls>",
+      "https://link-manager.leobing2023.workers.dev/*",
+      "https://tanstack-link-manager.leobing2023.workers.dev/*",
       "https://api.openrouter.ai/*",
       "https://api.capsolver.com/*",
       "https://ahrefs.com/*"
     ]
   }
 }
-
