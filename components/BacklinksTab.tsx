@@ -1,6 +1,15 @@
 import { useCallback, useState } from "react"
+
 import { DEBUG } from "../config"
-import { contentStyle, labelStyle, inputStyle, buttonStyle, disabledButtonStyle, secondaryButtonStyle, errorStyle } from "./styles"
+import {
+  buttonStyle,
+  contentStyle,
+  disabledButtonStyle,
+  errorStyle,
+  inputStyle,
+  labelStyle,
+  secondaryButtonStyle
+} from "./styles"
 
 type BacklinksTabProps = {
   backlinksDomain: string
@@ -13,7 +22,9 @@ type BacklinksTabProps = {
     backlinks?: number
   } | null
   checkLoading: boolean
-  checkResults: {[key: string]: {exists: boolean, canSubmit: boolean}} | null
+  checkResults: {
+    [key: string]: { exists: boolean; canSubmit: boolean }
+  } | null
   savingUrls: Set<string>
   savedUrls: Set<string>
   onDomainChange: (domain: string) => void
@@ -37,12 +48,60 @@ export const BacklinksTab = ({
   onCheckBacklinks,
   onSaveBacklink
 }: BacklinksTabProps) => {
-  const backlinks = backlinksData?.[1]?.backlinks || backlinksData?.[1]?.topBacklinks?.backlinks
+  const backlinks =
+    backlinksData?.[1]?.backlinks || backlinksData?.[1]?.topBacklinks?.backlinks
+  const [saveDomainTarget, setSaveDomainTarget] = useState("")
+  const [saveDomainLoading, setSaveDomainLoading] = useState(false)
+  const [saveDomainMessage, setSaveDomainMessage] = useState<string | null>(
+    null
+  )
+
+  const handleSaveDomain = useCallback(async () => {
+    const typedTarget = saveDomainTarget.trim()
+    const target = typedTarget || window.location.href
+    const title = typedTarget ? undefined : document.title || undefined
+
+    setSaveDomainLoading(true)
+    setSaveDomainMessage(null)
+
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: "SAVE_DOMAIN",
+        payload: {
+          target,
+          title
+        }
+      })
+
+      if (!response?.success) {
+        throw new Error(response?.error || "Failed to save domain")
+      }
+
+      const statusLabel =
+        response.status === "skipped" ? "Already saved" : "Saved"
+      setSaveDomainMessage(`${statusLabel}: ${response.domain}`)
+      setSaveDomainTarget("")
+    } catch (error) {
+      setSaveDomainMessage(
+        error instanceof Error ? error.message : String(error)
+      )
+    } finally {
+      setSaveDomainLoading(false)
+    }
+  }, [saveDomainTarget])
 
   return (
     <div style={contentStyle}>
       <section style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600, fontFamily: "system-ui, -apple-system, sans-serif" }}>Backlinks Checker</h2>
+        <h2
+          style={{
+            margin: 0,
+            fontSize: 18,
+            fontWeight: 600,
+            fontFamily: "system-ui, -apple-system, sans-serif"
+          }}>
+          Backlinks Checker
+        </h2>
         <p style={{ fontSize: 13, color: "#64748b", margin: 0 }}>
           Get backlinks data from Ahrefs using CapSolver to bypass verification
         </p>
@@ -57,7 +116,8 @@ export const BacklinksTab = ({
             onChange={(e) => onDomainChange(e.target.value)}
           />
           <span style={{ fontSize: 11, color: "#64748b" }}>
-            Enter domain or leave empty to use current page (http://, https://, and trailing slashes will be automatically removed)
+            Enter domain or leave empty to use current page (http://, https://,
+            and trailing slashes will be automatically removed)
           </span>
         </label>
 
@@ -69,11 +129,70 @@ export const BacklinksTab = ({
         </button>
 
         {backlinksError && <p style={errorStyle}>{backlinksError}</p>}
+      </section>
 
-        {backlinksDomainMetrics && (
-          <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>Domain Metrics</h3>
-            <div style={{
+      <section style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <h2
+          style={{
+            margin: 0,
+            fontSize: 18,
+            fontWeight: 600,
+            fontFamily: "system-ui, -apple-system, sans-serif"
+          }}>
+          Save Domain
+        </h2>
+        <p style={{ fontSize: 13, color: "#64748b", margin: 0 }}>
+          Save a domain to Link Manager default group.
+        </p>
+
+        <label style={labelStyle}>
+          <span>Domain</span>
+          <input
+            style={inputStyle}
+            type="text"
+            placeholder="Leave empty to save current page domain"
+            value={saveDomainTarget}
+            onChange={(e) => setSaveDomainTarget(e.target.value)}
+          />
+          <span style={{ fontSize: 11, color: "#64748b" }}>
+            Enter a domain or URL, or leave empty to save the current page.
+          </span>
+        </label>
+
+        <button
+          style={saveDomainLoading ? disabledButtonStyle : buttonStyle}
+          disabled={saveDomainLoading}
+          onClick={handleSaveDomain}>
+          {saveDomainLoading ? "Saving Domain..." : "Save Domain"}
+        </button>
+
+        {saveDomainMessage ? (
+          <p
+            style={
+              saveDomainMessage.startsWith("Saved") ||
+              saveDomainMessage.startsWith("Already")
+                ? {
+                    border: "1px solid #bbf7d0",
+                    backgroundColor: "#dcfce7",
+                    color: "#15803d",
+                    borderRadius: 6,
+                    padding: "10px 12px",
+                    fontSize: 12
+                  }
+                : errorStyle
+            }>
+            {saveDomainMessage}
+          </p>
+        ) : null}
+      </section>
+
+      {backlinksDomainMetrics && (
+        <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>
+            Domain Metrics
+          </h3>
+          <div
+            style={{
               display: "flex",
               gap: 12,
               padding: "12px",
@@ -82,54 +201,88 @@ export const BacklinksTab = ({
               border: "1px solid #e2e8f0",
               flexWrap: "wrap"
             }}>
-              {(backlinksDomainMetrics.domainRating !== undefined && backlinksDomainMetrics.domainRating !== null) ? (
-                <div style={{
+            {backlinksDomainMetrics.domainRating !== undefined &&
+            backlinksDomainMetrics.domainRating !== null ? (
+              <div
+                style={{
                   display: "flex",
                   alignItems: "center",
                   gap: 6
                 }}>
-                  <span style={{ fontSize: 12, color: "#64748b", fontWeight: 500 }}>Domain Rating:</span>
-                  <span style={{ fontSize: 14, color: "#059669", fontWeight: 600 }}>DR {backlinksDomainMetrics.domainRating}</span>
-                </div>
-              ) : null}
-              {(backlinksDomainMetrics.refdomains !== undefined && backlinksDomainMetrics.refdomains !== null) ? (
-                <div style={{
+                <span
+                  style={{ fontSize: 12, color: "#64748b", fontWeight: 500 }}>
+                  Domain Rating:
+                </span>
+                <span
+                  style={{ fontSize: 14, color: "#059669", fontWeight: 600 }}>
+                  DR {backlinksDomainMetrics.domainRating}
+                </span>
+              </div>
+            ) : null}
+            {backlinksDomainMetrics.refdomains !== undefined &&
+            backlinksDomainMetrics.refdomains !== null ? (
+              <div
+                style={{
                   display: "flex",
                   alignItems: "center",
                   gap: 6
                 }}>
-                  <span style={{ fontSize: 12, color: "#64748b", fontWeight: 500 }}>Ref Domains:</span>
-                  <span style={{ fontSize: 14, color: "#3b82f6", fontWeight: 600 }}>{backlinksDomainMetrics.refdomains.toLocaleString()}</span>
-                </div>
-              ) : null}
-              {(backlinksDomainMetrics.backlinks !== undefined && backlinksDomainMetrics.backlinks !== null) ? (
-                <div style={{
+                <span
+                  style={{ fontSize: 12, color: "#64748b", fontWeight: 500 }}>
+                  Ref Domains:
+                </span>
+                <span
+                  style={{ fontSize: 14, color: "#3b82f6", fontWeight: 600 }}>
+                  {backlinksDomainMetrics.refdomains.toLocaleString()}
+                </span>
+              </div>
+            ) : null}
+            {backlinksDomainMetrics.backlinks !== undefined &&
+            backlinksDomainMetrics.backlinks !== null ? (
+              <div
+                style={{
                   display: "flex",
                   alignItems: "center",
                   gap: 6
                 }}>
-                  <span style={{ fontSize: 12, color: "#64748b", fontWeight: 500 }}>Total Backlinks:</span>
-                  <span style={{ fontSize: 14, color: "#3b82f6", fontWeight: 600 }}>{backlinksDomainMetrics.backlinks.toLocaleString()}</span>
-                </div>
-              ) : null}
-              {(!backlinksDomainMetrics.domainRating && !backlinksDomainMetrics.refdomains && !backlinksDomainMetrics.backlinks) && (
-                <div style={{ fontSize: 12, color: "#64748b", fontStyle: "italic" }}>
+                <span
+                  style={{ fontSize: 12, color: "#64748b", fontWeight: 500 }}>
+                  Total Backlinks:
+                </span>
+                <span
+                  style={{ fontSize: 14, color: "#3b82f6", fontWeight: 600 }}>
+                  {backlinksDomainMetrics.backlinks.toLocaleString()}
+                </span>
+              </div>
+            ) : null}
+            {!backlinksDomainMetrics.domainRating &&
+              !backlinksDomainMetrics.refdomains &&
+              !backlinksDomainMetrics.backlinks && (
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: "#64748b",
+                    fontStyle: "italic"
+                  }}>
                   No domain metrics available
                 </div>
               )}
-            </div>
-          </section>
-        )}
+          </div>
+        </section>
+      )}
 
-        {backlinksData && (
-          <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>Backlinks Results</h3>
-            
-            {backlinks && backlinks.length > 0 ? (
-              <>
-                <div style={{ 
-                  fontSize: 12, 
-                  color: "#059669", 
+      {backlinksData && (
+        <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>
+            Backlinks Results
+          </h3>
+
+          {backlinks && backlinks.length > 0 ? (
+            <>
+              <div
+                style={{
+                  fontSize: 12,
+                  color: "#059669",
                   backgroundColor: "#dcfce7",
                   padding: "8px 12px",
                   borderRadius: 6,
@@ -138,79 +291,125 @@ export const BacklinksTab = ({
                   justifyContent: "space-between",
                   alignItems: "center"
                 }}>
-                  <span>✅ Found {backlinks.length} backlink{backlinks.length > 1 ? 's' : ''}</span>
-                  <button
-                    style={{
-                      ...secondaryButtonStyle,
-                      padding: "6px 16px",
-                      fontSize: 12,
-                      backgroundColor: checkLoading ? "#a5b4fc" : (checkResults ? "#10b981" : "#4f46e5"),
-                      color: "white",
-                      borderColor: checkLoading ? "#a5b4fc" : (checkResults ? "#10b981" : "#4f46e5"),
-                      cursor: checkLoading ? "not-allowed" : "pointer"
-                    }}
-                    disabled={checkLoading}
-                    onClick={onCheckBacklinks}>
-                    {checkLoading ? "Checking..." : (checkResults ? "✓ Checked" : "Check")}
-                  </button>
-                </div>
-                
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {backlinks.map((backlink: any, index: number) => {
-                    const checkResult = checkResults?.[backlink.urlFrom]
-                    const isNew = checkResult?.canSubmit === true
-                    const isExisting = checkResult?.exists === true
-                    
-                    return (
-                      <div
-                        key={index}
+                <span>
+                  ✅ Found {backlinks.length} backlink
+                  {backlinks.length > 1 ? "s" : ""}
+                </span>
+                <button
+                  style={{
+                    ...secondaryButtonStyle,
+                    padding: "6px 16px",
+                    fontSize: 12,
+                    backgroundColor: checkLoading
+                      ? "#a5b4fc"
+                      : checkResults
+                        ? "#10b981"
+                        : "#4f46e5",
+                    color: "white",
+                    borderColor: checkLoading
+                      ? "#a5b4fc"
+                      : checkResults
+                        ? "#10b981"
+                        : "#4f46e5",
+                    cursor: checkLoading ? "not-allowed" : "pointer"
+                  }}
+                  disabled={checkLoading}
+                  onClick={onCheckBacklinks}>
+                  {checkLoading
+                    ? "Checking..."
+                    : checkResults
+                      ? "✓ Checked"
+                      : "Check"}
+                </button>
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {backlinks.map((backlink: any, index: number) => {
+                  const checkResult = checkResults?.[backlink.urlFrom]
+                  const isNew = checkResult?.canSubmit === true
+                  const isExisting = checkResult?.exists === true
+
+                  return (
+                    <div
+                      key={index}
+                      style={{
+                        border: `1px solid ${isNew ? "#bbf7d0" : isExisting ? "#fed7aa" : "#e2e8f0"}`,
+                        borderRadius: 6,
+                        padding: "10px 12px",
+                        backgroundColor: isNew
+                          ? "#dcfce7"
+                          : isExisting
+                            ? "#ffedd5"
+                            : "#ffffff",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        gap: 12,
+                        transition: "all 0.2s ease"
+                      }}>
+                      <a
+                        href={backlink.urlFrom}
+                        target="_blank"
+                        rel="noopener noreferrer"
                         style={{
-                          border: `1px solid ${isNew ? "#bbf7d0" : isExisting ? "#fed7aa" : "#e2e8f0"}`,
-                          borderRadius: 6,
-                          padding: "10px 12px",
-                          backgroundColor: isNew ? "#dcfce7" : isExisting ? "#ffedd5" : "#ffffff",
+                          fontSize: 13,
+                          color: isNew
+                            ? "#15803d"
+                            : isExisting
+                              ? "#9a3412"
+                              : "#4f46e5",
+                          textDecoration: "none",
+                          wordBreak: "break-all",
+                          flex: 1,
+                          fontWeight: isNew ? 600 : 400
+                        }}
+                        onMouseEnter={(e) =>
+                          (e.currentTarget.style.textDecoration = "underline")
+                        }
+                        onMouseLeave={(e) =>
+                          (e.currentTarget.style.textDecoration = "none")
+                        }>
+                        {backlink.urlFrom}
+                      </a>
+                      <div
+                        style={{
                           display: "flex",
-                          justifyContent: "space-between",
+                          gap: 8,
                           alignItems: "center",
-                          gap: 12,
-                          transition: "all 0.2s ease"
+                          flexShrink: 0
                         }}>
-                        <a
-                          href={backlink.urlFrom}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={{
-                            fontSize: 13,
-                            color: isNew ? "#15803d" : isExisting ? "#9a3412" : "#4f46e5",
-                            textDecoration: "none",
-                            wordBreak: "break-all",
-                            flex: 1,
-                            fontWeight: isNew ? 600 : 400
-                          }}
-                          onMouseEnter={(e) => e.currentTarget.style.textDecoration = "underline"}
-                          onMouseLeave={(e) => e.currentTarget.style.textDecoration = "none"}>
-                          {backlink.urlFrom}
-                        </a>
-                        <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
-                          {checkResult && isNew && !savedUrls.has(backlink.urlFrom) && (
+                        {checkResult &&
+                          isNew &&
+                          !savedUrls.has(backlink.urlFrom) && (
                             <button
                               style={{
                                 ...secondaryButtonStyle,
                                 padding: "4px 12px",
                                 fontSize: 11,
-                                backgroundColor: savingUrls.has(backlink.urlFrom) ? "#a5b4fc" : "#10b981",
+                                backgroundColor: savingUrls.has(
+                                  backlink.urlFrom
+                                )
+                                  ? "#a5b4fc"
+                                  : "#10b981",
                                 color: "white",
-                                borderColor: savingUrls.has(backlink.urlFrom) ? "#a5b4fc" : "#10b981",
-                                cursor: savingUrls.has(backlink.urlFrom) ? "not-allowed" : "pointer",
+                                borderColor: savingUrls.has(backlink.urlFrom)
+                                  ? "#a5b4fc"
+                                  : "#10b981",
+                                cursor: savingUrls.has(backlink.urlFrom)
+                                  ? "not-allowed"
+                                  : "pointer",
                                 minWidth: 60
                               }}
                               disabled={savingUrls.has(backlink.urlFrom)}
                               onClick={() => onSaveBacklink(backlink)}>
-                              {savingUrls.has(backlink.urlFrom) ? "..." : "Save"}
+                              {savingUrls.has(backlink.urlFrom)
+                                ? "..."
+                                : "Save"}
                             </button>
                           )}
-                          {savedUrls.has(backlink.urlFrom) && (
-                            <div style={{
+                        {savedUrls.has(backlink.urlFrom) && (
+                          <div
+                            style={{
                               fontSize: 11,
                               fontWeight: 600,
                               color: "#059669",
@@ -218,31 +417,33 @@ export const BacklinksTab = ({
                               padding: "4px 12px",
                               borderRadius: 4
                             }}>
-                              Saved
-                            </div>
-                          )}
-                          {backlink.domainRating !== undefined && (
-                            <div style={{ 
-                              fontSize: 12, 
+                            Saved
+                          </div>
+                        )}
+                        {backlink.domainRating !== undefined && (
+                          <div
+                            style={{
+                              fontSize: 12,
                               fontWeight: 600,
-                              color: "#059669", 
+                              color: "#059669",
                               backgroundColor: "#dcfce7",
                               padding: "4px 10px",
                               borderRadius: 4,
                               minWidth: 40,
                               textAlign: "center"
                             }}>
-                              DR {backlink.domainRating}
-                            </div>
-                          )}
-                        </div>
+                            DR {backlink.domainRating}
+                          </div>
+                        )}
                       </div>
-                    )
-                  })}
-                </div>
-              </>
-            ) : (
-              <div style={{
+                    </div>
+                  )
+                })}
+              </div>
+            </>
+          ) : (
+            <div
+              style={{
                 border: "1px solid #fecdd3",
                 backgroundColor: "#ffe4e6",
                 color: "#be123c",
@@ -250,30 +451,34 @@ export const BacklinksTab = ({
                 padding: "12px 16px",
                 fontSize: 13
               }}>
-                <div style={{ fontWeight: 600, marginBottom: 4 }}>No backlinks found</div>
-                <div style={{ fontSize: 12 }}>
-                  This domain may not have any backlinks indexed by Ahrefs, or the data structure is unexpected.
-                  Check the browser console (F12) for detailed logs.
-                </div>
-                <details style={{ marginTop: 8, fontSize: 11 }}>
-                  <summary style={{ cursor: "pointer", fontWeight: 500 }}>View raw response</summary>
-                  <pre style={{ 
-                    marginTop: 8, 
-                    padding: 8, 
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                No backlinks found
+              </div>
+              <div style={{ fontSize: 12 }}>
+                This domain may not have any backlinks indexed by Ahrefs, or the
+                data structure is unexpected. Check the browser console (F12)
+                for detailed logs.
+              </div>
+              <details style={{ marginTop: 8, fontSize: 11 }}>
+                <summary style={{ cursor: "pointer", fontWeight: 500 }}>
+                  View raw response
+                </summary>
+                <pre
+                  style={{
+                    marginTop: 8,
+                    padding: 8,
                     backgroundColor: "#fff1f2",
                     borderRadius: 4,
                     overflow: "auto",
                     maxHeight: 200
                   }}>
-                    {JSON.stringify(backlinksData, null, 2)}
-                  </pre>
-                </details>
-              </div>
-            )}
-          </section>
-        )}
-      </section>
+                  {JSON.stringify(backlinksData, null, 2)}
+                </pre>
+              </details>
+            </div>
+          )}
+        </section>
+      )}
     </div>
   )
 }
-

@@ -1,6 +1,7 @@
 import type { PlasmoCSConfig } from "plasmo"
-import { createRoot } from "react-dom/client"
 import React from "react"
+import { createRoot } from "react-dom/client"
+
 import SidePanel from "./components/CommentPanel"
 import { DEBUG } from "./config"
 
@@ -13,7 +14,7 @@ const PANEL_ID = "comment-fast-floating-panel"
 
 const removePanel = () => {
   const panel = document.getElementById(PANEL_ID)
-  
+
   if (panel) {
     const root = (panel as any)._reactRoot
     if (root) {
@@ -45,8 +46,8 @@ const createFloatingPanel = async () => {
   `
 
   // Create Shadow DOM root for style isolation
-  const shadowRoot = shadowHost.attachShadow({ mode: 'open' })
-  
+  const shadowRoot = shadowHost.attachShadow({ mode: "open" })
+
   // Create style element with CSS reset and base styles for complete isolation
   const style = document.createElement("style")
   style.textContent = `
@@ -114,6 +115,199 @@ type GetPageContextRequest = {
 
 type ContentMessage = GetPageContextRequest
 
+const SEARCH_DOMAIN_BUTTON_CLASS = "comment-fast-save-domain-button"
+const SEARCH_RESULT_CONTAINER_CLASS = "comment-fast-search-result-container"
+
+const isGoogleSearchPage = () => {
+  return (
+    /(^|\.)google\./i.test(window.location.hostname) &&
+    window.location.pathname === "/search"
+  )
+}
+
+const isSavableUrl = (href: string) => {
+  try {
+    const url = new URL(href)
+    if (url.protocol !== "http:" && url.protocol !== "https:") return false
+    if (/(^|\.)google\./i.test(url.hostname)) return false
+    return true
+  } catch {
+    return false
+  }
+}
+
+const findSearchResultContainer = (anchor: HTMLAnchorElement) => {
+  const googleResult = anchor.closest<HTMLElement>("div.MjjYud, div.g")
+  if (googleResult) return googleResult
+
+  let node: HTMLElement | null = anchor
+  let candidate: HTMLElement | null = null
+
+  for (let index = 0; index < 10 && node; index += 1) {
+    if (node.querySelector("h3") && node.querySelector("cite")) {
+      candidate = node
+    }
+    node = node.parentElement
+  }
+
+  return candidate || anchor.parentElement
+}
+
+const saveDomainFromSearchResult = async (
+  button: HTMLButtonElement,
+  target: string,
+  title?: string
+) => {
+  const previousText = button.textContent || "+"
+  button.disabled = true
+  button.textContent = "..."
+  button.dataset.state = "saving"
+
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: "SAVE_DOMAIN",
+      payload: {
+        target,
+        title
+      }
+    })
+
+    if (!response?.success) {
+      throw new Error(response?.error || "Failed")
+    }
+
+    button.textContent = "✓"
+    button.dataset.state = "saved"
+    button.title =
+      response.status === "skipped"
+        ? "Domain already saved"
+        : "Saved to Link Manager"
+  } catch (error) {
+    button.textContent = "!"
+    button.dataset.state = "error"
+    button.title = error instanceof Error ? error.message : String(error)
+
+    window.setTimeout(() => {
+      button.disabled = false
+      button.textContent = previousText
+      button.dataset.state = "idle"
+    }, 2200)
+  }
+}
+
+const buildSearchResultButton = (anchor: HTMLAnchorElement) => {
+  const button = document.createElement("button")
+  button.type = "button"
+  button.className = SEARCH_DOMAIN_BUTTON_CLASS
+  button.textContent = "+"
+  button.title = "Save domain to Link Manager"
+  button.setAttribute("aria-label", "Save domain to Link Manager")
+  button.dataset.state = "idle"
+
+  button.addEventListener("click", (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    void saveDomainFromSearchResult(
+      button,
+      anchor.href,
+      anchor.querySelector("h3")?.textContent?.trim() || undefined
+    )
+  })
+
+  return button
+}
+
+const injectSearchResultDomainButtons = () => {
+  if (!isGoogleSearchPage()) return
+
+  const anchors = Array.from(
+    document.querySelectorAll<HTMLAnchorElement>("a[href]")
+  ).filter((anchor) => anchor.querySelector("h3") && isSavableUrl(anchor.href))
+
+  for (const anchor of anchors) {
+    if (anchor.dataset.commentFastDomainButton === "1") continue
+
+    const container = findSearchResultContainer(anchor)
+    if (!container) continue
+
+    anchor.dataset.commentFastDomainButton = "1"
+    const button = buildSearchResultButton(anchor)
+    container.classList.add(SEARCH_RESULT_CONTAINER_CLASS)
+    container.appendChild(button)
+  }
+}
+
+const installSearchResultDomainButtons = () => {
+  if (!isGoogleSearchPage()) return
+
+  const styleId = "comment-fast-search-domain-style"
+  if (!document.getElementById(styleId)) {
+    const style = document.createElement("style")
+    style.id = styleId
+    style.textContent = `
+      .${SEARCH_RESULT_CONTAINER_CLASS} {
+        position: relative !important;
+      }
+      .${SEARCH_DOMAIN_BUTTON_CLASS} {
+        appearance: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 22px;
+        height: 22px;
+        min-width: 22px;
+        border: 1px solid #dadce0;
+        background: #fff;
+        color: #5f6368;
+        border-radius: 999px;
+        padding: 0;
+        margin: 0;
+        font: 600 14px/1 Arial, sans-serif;
+        cursor: pointer;
+        position: absolute;
+        top: 18px;
+        right: -30px;
+        z-index: 2;
+        opacity: 0.46;
+        box-sizing: border-box;
+        box-shadow: none;
+        text-decoration: none;
+      }
+      .${SEARCH_RESULT_CONTAINER_CLASS}:hover .${SEARCH_DOMAIN_BUTTON_CLASS},
+      .${SEARCH_DOMAIN_BUTTON_CLASS}:hover {
+        border-color: #9aa0a6;
+        background: #f8fafd;
+        color: #202124;
+        opacity: 1;
+      }
+      .${SEARCH_DOMAIN_BUTTON_CLASS}[data-state="saving"] {
+        cursor: wait;
+        opacity: 0.72;
+        font-size: 12px;
+      }
+      .${SEARCH_DOMAIN_BUTTON_CLASS}[data-state="saved"] {
+        border-color: #34a853;
+        background: #e6f4ea;
+        color: #188038;
+        cursor: default;
+      }
+      .${SEARCH_DOMAIN_BUTTON_CLASS}[data-state="error"] {
+        border-color: #d93025;
+        background: #fce8e6;
+        color: #d93025;
+      }
+    `
+    document.documentElement.appendChild(style)
+  }
+
+  injectSearchResultDomainButtons()
+
+  const observer = new MutationObserver(() => {
+    window.setTimeout(injectSearchResultDomainButtons, 100)
+  })
+  observer.observe(document.body, { childList: true, subtree: true })
+}
+
 const extractContentSnippet = () => {
   const articleElement = document.querySelector("article")
 
@@ -144,9 +338,14 @@ const extractArticleStructure = () => {
   if (h1) structure.mainTitle = h1.textContent?.trim() || ""
 
   const headings = Array.from(document.querySelectorAll("h2, h3")).slice(0, 5)
-  structure.keyPoints = headings.map((h) => h.textContent?.trim() || "").filter(Boolean).join("; ")
+  structure.keyPoints = headings
+    .map((h) => h.textContent?.trim() || "")
+    .filter(Boolean)
+    .join("; ")
 
-  const firstParagraphs = Array.from(document.querySelectorAll("article p, .post-content p, .content p, p"))
+  const firstParagraphs = Array.from(
+    document.querySelectorAll("article p, .post-content p, .content p, p")
+  )
     .slice(0, 3)
     .map((p) => p.textContent?.trim())
     .filter(Boolean)
@@ -162,63 +361,71 @@ const extractArticleStructure = () => {
 }
 
 // Log that content script is loaded
-if (DEBUG) console.log("✅ Comment Fast content script loaded on:", window.location.href)
+if (DEBUG)
+  console.log("✅ Comment Fast content script loaded on:", window.location.href)
+
+installSearchResultDomainButtons()
 
 // Ensure message listener is set up immediately
-chrome.runtime.onMessage.addListener((message: ContentMessage | { type: "TOGGLE_FLOATING_PANEL" | "PING" }, _sender, sendResponse) => {
-  // Handle ping message (used to check if content script is loaded)
-  if (message?.type === "PING") {
-    sendResponse({ success: true, loaded: true })
-    return true
-  }
-
-  // Handle toggle panel message
-  if (message?.type === "TOGGLE_FLOATING_PANEL") {
-    try {
-      createFloatingPanel()
-      sendResponse({ success: true })
-    } catch (error) {
-      console.error("❌ Error creating floating panel:", error)
-      sendResponse({ 
-        success: false, 
-        error: error instanceof Error ? error.message : String(error) 
-      })
+chrome.runtime.onMessage.addListener(
+  (
+    message: ContentMessage | { type: "TOGGLE_FLOATING_PANEL" | "PING" },
+    _sender,
+    sendResponse
+  ) => {
+    // Handle ping message (used to check if content script is loaded)
+    if (message?.type === "PING") {
+      sendResponse({ success: true, loaded: true })
+      return true
     }
-    return true
-  }
 
-  // Handle get page context message
-  if (message?.type === "GET_PAGE_CONTEXT") {
-    try {
-      const title = document.title || ""
-      const url = window.location.href
-      const contentSnippet = extractContentSnippet()
-      const structure = extractArticleStructure()
+    // Handle toggle panel message
+    if (message?.type === "TOGGLE_FLOATING_PANEL") {
+      try {
+        createFloatingPanel()
+        sendResponse({ success: true })
+      } catch (error) {
+        console.error("❌ Error creating floating panel:", error)
+        sendResponse({
+          success: false,
+          error: error instanceof Error ? error.message : String(error)
+        })
+      }
+      return true
+    }
 
-      const response = {
-        success: true,
-        payload: {
-          title,
-          url,
-          contentSnippet,
-          structure
+    // Handle get page context message
+    if (message?.type === "GET_PAGE_CONTEXT") {
+      try {
+        const title = document.title || ""
+        const url = window.location.href
+        const contentSnippet = extractContentSnippet()
+        const structure = extractArticleStructure()
+
+        const response = {
+          success: true,
+          payload: {
+            title,
+            url,
+            contentSnippet,
+            structure
+          }
         }
+
+        sendResponse(response)
+      } catch (error) {
+        console.error("❌ Error in content script:", error)
+        sendResponse({
+          success: false,
+          error: error instanceof Error ? error.message : String(error)
+        })
       }
 
-      sendResponse(response)
-    } catch (error) {
-      console.error("❌ Error in content script:", error)
-      sendResponse({
-        success: false,
-        error: error instanceof Error ? error.message : String(error)
-      })
+      // Return true to indicate we will send a response asynchronously
+      return true
     }
-    
-    // Return true to indicate we will send a response asynchronously
-    return true
+
+    // Unknown message type
+    return false
   }
-
-  // Unknown message type
-  return false
-})
-
+)

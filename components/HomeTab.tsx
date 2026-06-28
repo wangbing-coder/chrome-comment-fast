@@ -1,5 +1,14 @@
 import { useCallback, useState } from "react"
-import { contentStyle, buttonStyle, disabledButtonStyle, secondaryButtonStyle, cardStyle, errorStyle, inputStyle } from "./styles"
+
+import {
+  buttonStyle,
+  cardStyle,
+  contentStyle,
+  disabledButtonStyle,
+  errorStyle,
+  inputStyle,
+  secondaryButtonStyle
+} from "./styles"
 
 export type DomainInfo = {
   name: string
@@ -18,7 +27,7 @@ type HomeTabProps = {
   status: GenerationStatus
   error: string | null
   currentDomain: string
-  copyStatus: {[key: string]: string}
+  copyStatus: { [key: string]: string }
   domains: DomainInfo[]
   onGenerate: () => void
   onCopyComment: () => void
@@ -46,7 +55,12 @@ export const HomeTab = ({
 
   const isGenerating = status === "loading"
 
-  const buttonLabel = status === "loading" ? "Generating..." : status === "success" ? "Regenerate" : "Generate Comment"
+  const buttonLabel =
+    status === "loading"
+      ? "Generating..."
+      : status === "success"
+        ? "Regenerate"
+        : "Generate Comment"
 
   const handleAddDomain = useCallback(async () => {
     if (!newDomainName.trim()) {
@@ -80,8 +94,12 @@ export const HomeTab = ({
       const doc = parser.parseFromString(html, "text/html")
 
       const description =
-        doc.querySelector('meta[name="description"]')?.getAttribute("content") ||
-        doc.querySelector('meta[property="og:description"]')?.getAttribute("content") ||
+        doc
+          .querySelector('meta[name="description"]')
+          ?.getAttribute("content") ||
+        doc
+          .querySelector('meta[property="og:description"]')
+          ?.getAttribute("content") ||
         `Website: ${domain}`
 
       const markdown = `[${name}](${url})`
@@ -119,33 +137,39 @@ export const HomeTab = ({
     [domains, onDomainsChange]
   )
 
-  const handleDragStart = useCallback((e: React.DragEvent<HTMLDivElement>, index: number) => {
-    setDraggedIndex(index)
-    e.dataTransfer.effectAllowed = 'move'
-  }, [])
+  const handleDragStart = useCallback(
+    (e: React.DragEvent<HTMLDivElement>, index: number) => {
+      setDraggedIndex(index)
+      e.dataTransfer.effectAllowed = "move"
+    },
+    []
+  )
 
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
+    e.dataTransfer.dropEffect = "move"
   }, [])
 
-  const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>, dropIndex: number) => {
-    e.preventDefault()
+  const handleDrop = useCallback(
+    (e: React.DragEvent<HTMLDivElement>, dropIndex: number) => {
+      e.preventDefault()
 
-    if (draggedIndex === null || draggedIndex === dropIndex) {
+      if (draggedIndex === null || draggedIndex === dropIndex) {
+        setDraggedIndex(null)
+        return
+      }
+
+      const newDomains = [...domains]
+      const [removed] = newDomains.splice(draggedIndex, 1)
+      newDomains.splice(dropIndex, 0, removed)
+
+      onDomainsChange(newDomains)
       setDraggedIndex(null)
-      return
-    }
 
-    const newDomains = [...domains]
-    const [removed] = newDomains.splice(draggedIndex, 1)
-    newDomains.splice(dropIndex, 0, removed)
-
-    onDomainsChange(newDomains)
-    setDraggedIndex(null)
-
-    chrome.storage.sync.set({ userDomains: newDomains })
-  }, [domains, draggedIndex, onDomainsChange])
+      chrome.storage.sync.set({ userDomains: newDomains })
+    },
+    [domains, draggedIndex, onDomainsChange]
+  )
 
   const handleDragEnd = useCallback(() => {
     setDraggedIndex(null)
@@ -167,28 +191,38 @@ export const HomeTab = ({
       {comment ? (
         <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ fontSize: 13, color: "#64748b", fontWeight: 500 }}>Generated Comment</span>
+            <span style={{ fontSize: 13, color: "#64748b", fontWeight: 500 }}>
+              Generated Comment
+            </span>
             {currentDomain && (
               <>
-                <span style={{
-                  fontSize: 11,
-                  color: "#9ca3af",
-                  fontWeight: 400
-                }}>for</span>
-                <span style={{
-                  fontSize: 11,
-                  fontFamily: "monospace",
-                  color: "#6b7280",
-                  backgroundColor: "#f8fafc",
-                  padding: "1px 5px",
-                  borderRadius: 2,
-                  border: "1px solid #e5e7eb",
-                  cursor: "pointer",
-                  userSelect: "text"
-                }}
-                onClick={() => onCopyToClipboard(currentDomain, "Domain")}
-                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#f3f4f6"}
-                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "#f8fafc"}>
+                <span
+                  style={{
+                    fontSize: 11,
+                    color: "#9ca3af",
+                    fontWeight: 400
+                  }}>
+                  for
+                </span>
+                <span
+                  style={{
+                    fontSize: 11,
+                    fontFamily: "monospace",
+                    color: "#6b7280",
+                    backgroundColor: "#f8fafc",
+                    padding: "1px 5px",
+                    borderRadius: 2,
+                    border: "1px solid #e5e7eb",
+                    cursor: "pointer",
+                    userSelect: "text"
+                  }}
+                  onClick={() => onCopyToClipboard(currentDomain, "Domain")}
+                  onMouseEnter={(e) =>
+                    (e.currentTarget.style.backgroundColor = "#f3f4f6")
+                  }
+                  onMouseLeave={(e) =>
+                    (e.currentTarget.style.backgroundColor = "#f8fafc")
+                  }>
                   {currentDomain}
                 </span>
               </>
@@ -217,8 +251,19 @@ export const HomeTab = ({
         </section>
       ) : null}
 
-      <section style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 20 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <section
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 10,
+          marginTop: 20
+        }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center"
+          }}>
           <span style={{ fontSize: 14, fontWeight: 600 }}>My Domains</span>
           <button
             style={{
@@ -287,7 +332,10 @@ export const HomeTab = ({
               <div
                 key={d.domain}
                 style={{
-                  border: draggedIndex === index ? "2px solid #3b82f6" : "1px solid #e2e8f0",
+                  border:
+                    draggedIndex === index
+                      ? "2px solid #3b82f6"
+                      : "1px solid #e2e8f0",
                   borderRadius: 8,
                   padding: 16,
                   backgroundColor: "#ffffff",
@@ -301,7 +349,13 @@ export const HomeTab = ({
                 onDragOver={handleDragOver}
                 onDrop={(e) => handleDrop(e, index)}
                 onDragEnd={handleDragEnd}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "flex-start",
+                    marginBottom: 12
+                  }}>
                   <div style={{ flex: 1 }}>
                     <div
                       style={{
@@ -324,10 +378,25 @@ export const HomeTab = ({
                         e.currentTarget.style.backgroundColor = "transparent"
                         e.currentTarget.style.borderColor = "transparent"
                       }}>
-                      <span style={{ fontSize: 14, fontWeight: 600, color: "#1f2937" }}>{d.fullUrl}</span>
+                      <span
+                        style={{
+                          fontSize: 14,
+                          fontWeight: 600,
+                          color: "#1f2937"
+                        }}>
+                        {d.fullUrl}
+                      </span>
                     </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ fontSize: 12, color: "#6b7280", fontWeight: 500 }}>Name:</span>
+                    <div
+                      style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span
+                        style={{
+                          fontSize: 12,
+                          color: "#6b7280",
+                          fontWeight: 500
+                        }}>
+                        Name:
+                      </span>
                       <div
                         style={{
                           backgroundColor: "#f8fafc",
@@ -341,8 +410,12 @@ export const HomeTab = ({
                           fontFamily: "monospace"
                         }}
                         onClick={() => onCopyToClipboard(d.name, "Name")}
-                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#f3f4f6"}
-                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "#f8fafc"}>
+                        onMouseEnter={(e) =>
+                          (e.currentTarget.style.backgroundColor = "#f3f4f6")
+                        }
+                        onMouseLeave={(e) =>
+                          (e.currentTarget.style.backgroundColor = "#f8fafc")
+                        }>
                         {d.name}
                       </div>
                     </div>
@@ -360,14 +433,27 @@ export const HomeTab = ({
                       transition: "background-color 0.2s"
                     }}
                     onClick={() => handleRemoveDomain(d.domain)}
-                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#fee2e2"}
-                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "transparent"}>
+                    onMouseEnter={(e) =>
+                      (e.currentTarget.style.backgroundColor = "#fee2e2")
+                    }
+                    onMouseLeave={(e) =>
+                      (e.currentTarget.style.backgroundColor = "transparent")
+                    }>
                     ×
                   </button>
                 </div>
 
-                <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 8 }}>
-                  <span style={{ fontSize: 11, color: "#6b7280", fontWeight: 500 }}>Description:</span>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 4,
+                    marginBottom: 8
+                  }}>
+                  <span
+                    style={{ fontSize: 11, color: "#6b7280", fontWeight: 500 }}>
+                    Description:
+                  </span>
                   <div
                     style={{
                       backgroundColor: "#f8fafc",
@@ -380,16 +466,35 @@ export const HomeTab = ({
                       cursor: "pointer",
                       userSelect: "text"
                     }}
-                    onClick={() => onCopyToClipboard(d.description, "Description")}
-                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#f3f4f6"}
-                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "#f8fafc"}>
+                    onClick={() =>
+                      onCopyToClipboard(d.description, "Description")
+                    }
+                    onMouseEnter={(e) =>
+                      (e.currentTarget.style.backgroundColor = "#f3f4f6")
+                    }
+                    onMouseLeave={(e) =>
+                      (e.currentTarget.style.backgroundColor = "#f8fafc")
+                    }>
                     {d.description}
                   </div>
                 </div>
 
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                    <label style={{ fontSize: 10, color: "#6b7280", fontWeight: 500 }}>HTML Link:</label>
+                <div
+                  style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 3
+                    }}>
+                    <label
+                      style={{
+                        fontSize: 10,
+                        color: "#6b7280",
+                        fontWeight: 500
+                      }}>
+                      HTML Link:
+                    </label>
                     <div
                       style={{
                         backgroundColor: "#f8fafc",
@@ -405,16 +510,30 @@ export const HomeTab = ({
                         position: "relative"
                       }}
                       onClick={() => onCopyToClipboard(d.htmlLink, "HTML Link")}
-                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#f3f4f6"}
-                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "#f8fafc"}>
-                      <div>
-                        {d.htmlLink}
-                      </div>
+                      onMouseEnter={(e) =>
+                        (e.currentTarget.style.backgroundColor = "#f3f4f6")
+                      }
+                      onMouseLeave={(e) =>
+                        (e.currentTarget.style.backgroundColor = "#f8fafc")
+                      }>
+                      <div>{d.htmlLink}</div>
                     </div>
                   </div>
 
-                  <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                    <label style={{ fontSize: 10, color: "#6b7280", fontWeight: 500 }}>Markdown Link:</label>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 3
+                    }}>
+                    <label
+                      style={{
+                        fontSize: 10,
+                        color: "#6b7280",
+                        fontWeight: 500
+                      }}>
+                      Markdown Link:
+                    </label>
                     <div
                       style={{
                         backgroundColor: "#f8fafc",
@@ -429,12 +548,16 @@ export const HomeTab = ({
                         userSelect: "text",
                         position: "relative"
                       }}
-                      onClick={() => onCopyToClipboard(d.markdown, "Markdown Link")}
-                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#f3f4f6"}
-                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "#f8fafc"}>
-                      <div>
-                        {d.markdown}
-                      </div>
+                      onClick={() =>
+                        onCopyToClipboard(d.markdown, "Markdown Link")
+                      }
+                      onMouseEnter={(e) =>
+                        (e.currentTarget.style.backgroundColor = "#f3f4f6")
+                      }
+                      onMouseLeave={(e) =>
+                        (e.currentTarget.style.backgroundColor = "#f8fafc")
+                      }>
+                      <div>{d.markdown}</div>
                     </div>
                   </div>
                 </div>
@@ -442,16 +565,28 @@ export const HomeTab = ({
             ))}
           </div>
         ) : (
-          <p style={{ fontSize: 12, color: "#9ca3af", textAlign: "center", margin: "16px 0" }}>
+          <p
+            style={{
+              fontSize: 12,
+              color: "#9ca3af",
+              textAlign: "center",
+              margin: "16px 0"
+            }}>
             No domains added yet. Click + to add your first domain.
           </p>
         )}
       </section>
 
-      <footer style={{ marginTop: "auto", paddingTop: 16, fontSize: 11, color: "#94a3b8", textAlign: "center" }}>
+      <footer
+        style={{
+          marginTop: "auto",
+          paddingTop: 16,
+          fontSize: 11,
+          color: "#94a3b8",
+          textAlign: "center"
+        }}>
         AI automatically detects and matches the article's language
       </footer>
     </div>
   )
 }
-

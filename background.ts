@@ -1,4 +1,5 @@
 import { DEBUG } from "./config"
+import { saveDomain } from "./linkManagerClient"
 
 type ArticleStructure = {
   mainTitle?: string
@@ -29,10 +30,19 @@ type GetCurrentTabRequest = {
   type: "GET_CURRENT_TAB"
 }
 
+type SaveDomainRequest = {
+  type: "SAVE_DOMAIN"
+  payload: {
+    target: string
+    title?: string
+  }
+}
+
 type BackgroundMessage =
   | GenerateCommentRequest
   | FetchBacklinksRequest
   | GetCurrentTabRequest
+  | SaveDomainRequest
 
 type OpenRouterResponse = {
   choices?: Array<{
@@ -368,6 +378,41 @@ chrome.runtime.onMessage.addListener(
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error)
           console.error("❌ Backlinks fetch error:", message)
+          sendResponse({ success: false, error: message })
+        }
+      })()
+      return true
+    }
+
+    if (message?.type === "SAVE_DOMAIN") {
+      ;(async () => {
+        try {
+          const target = message.payload?.target?.trim()
+          const title = message.payload?.title?.trim()
+
+          if (!target) {
+            sendResponse({ success: false, error: "Missing domain or URL" })
+            return
+          }
+
+          const data = await saveDomain(target, title)
+          const result = data.results?.[0]
+
+          if (!result || result.status === "error") {
+            throw new Error(result?.message || "Failed to save domain")
+          }
+
+          sendResponse({
+            success: true,
+            domain: result.domain,
+            status: result.status,
+            saved: data.saved,
+            skipped: data.skipped,
+            enriched: data.enrichment?.updated ?? 0
+          })
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          console.error("❌ Domain save error:", message)
           sendResponse({ success: false, error: message })
         }
       })()

@@ -27,6 +27,14 @@ type SaveResult = {
   message?: string
 }
 
+type SaveDomainResult = {
+  target: string
+  domain: string
+  id?: string
+  status: "created" | "skipped" | "error"
+  message?: string
+}
+
 export type CheckLinksResponse = {
   total: number
   exists: number
@@ -43,6 +51,19 @@ export type SaveLinksResponse = {
   saved: number
   skipped: number
   results: SaveResult[]
+}
+
+export type SaveDomainsResponse = {
+  success: boolean
+  saved: number
+  skipped: number
+  enrichment: {
+    success: boolean
+    checked: number
+    updated: number
+    failed: number
+  } | null
+  results: SaveDomainResult[]
 }
 
 const normalizeApiBase = (apiBase?: string): string => {
@@ -134,6 +155,24 @@ export const saveLinks = async (
 
   if (!Array.isArray(data?.results)) {
     throw new Error("Unexpected Link Manager save response")
+  }
+
+  return data
+}
+
+export const saveDomain = async (
+  target: string,
+  title?: string
+): Promise<SaveDomainsResponse> => {
+  const data = await fetchJson<SaveDomainsResponse>("/api/domains/save", {
+    target,
+    title,
+    domainGroup: "default",
+    tags: ["chrome"]
+  })
+
+  if (!Array.isArray(data?.results)) {
+    throw new Error("Unexpected Link Manager domain save response")
   }
 
   return data

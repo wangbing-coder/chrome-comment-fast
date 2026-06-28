@@ -1,6 +1,7 @@
 export const containerStyle: React.CSSProperties = {
   width: "100%",
   height: "100%",
+  minHeight: 0,
   display: "flex",
   flexDirection: "row",
   fontSize: 14,
@@ -56,6 +57,7 @@ export const activeTabButtonStyle: React.CSSProperties = {
 
 export const contentStyle: React.CSSProperties = {
   flex: 1,
+  minHeight: 0,
   padding: 24,
   overflowY: "auto",
   display: "flex",
@@ -138,4 +140,3 @@ export const successStyle: React.CSSProperties = {
   padding: "10px 12px",
   fontSize: 12
 }
-

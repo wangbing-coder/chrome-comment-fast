@@ -4,6 +4,7 @@ import {
   errorStyle,
   inputStyle,
   labelStyle,
+  secondaryButtonStyle,
   successStyle
 } from "./styles"
 
@@ -36,6 +37,16 @@ export const SettingsTab = ({
   onLinkManagerApiBaseChange,
   onSave
 }: SettingsTabProps) => {
+  const normalizedLinkManagerBase = linkManagerApiBase.trim().replace(/\/+$/g, "")
+  const domainsUrl = normalizedLinkManagerBase
+    ? `${normalizedLinkManagerBase}/domains`
+    : ""
+
+  const openDomainsPage = () => {
+    if (!domainsUrl) return
+    chrome.tabs.create({ url: domainsUrl })
+  }
+
   return (
     <div style={contentStyle}>
       <section style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -123,6 +134,16 @@ export const SettingsTab = ({
             production; change it only when testing a migrated backend.
           </span>
         </label>
+
+        <button
+          style={{
+            ...secondaryButtonStyle,
+            width: "100%"
+          }}
+          disabled={!domainsUrl}
+          onClick={openDomainsPage}>
+          Open Domains
+        </button>
 
         <button style={buttonStyle} onClick={onSave}>
           Save Settings

@@ -427,7 +427,13 @@ const SidePanel = ({ onClose }: SidePanelProps = {}) => {
 
       <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
 
-      <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          display: "flex",
+          flexDirection: "column"
+        }}>
         <Header onClose={onClose} />
 
         {activeTab === "home" ? (
