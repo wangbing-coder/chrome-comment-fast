@@ -1,6 +1,3 @@
-import { useCallback, useState } from "react"
-
-import { DEBUG } from "../config"
 import {
   buttonStyle,
   contentStyle,
@@ -50,45 +47,6 @@ export const BacklinksTab = ({
 }: BacklinksTabProps) => {
   const backlinks =
     backlinksData?.[1]?.backlinks || backlinksData?.[1]?.topBacklinks?.backlinks
-  const [saveDomainTarget, setSaveDomainTarget] = useState("")
-  const [saveDomainLoading, setSaveDomainLoading] = useState(false)
-  const [saveDomainMessage, setSaveDomainMessage] = useState<string | null>(
-    null
-  )
-
-  const handleSaveDomain = useCallback(async () => {
-    const typedTarget = saveDomainTarget.trim()
-    const target = typedTarget || window.location.href
-    const title = typedTarget ? undefined : document.title || undefined
-
-    setSaveDomainLoading(true)
-    setSaveDomainMessage(null)
-
-    try {
-      const response = await chrome.runtime.sendMessage({
-        type: "SAVE_DOMAIN",
-        payload: {
-          target,
-          title
-        }
-      })
-
-      if (!response?.success) {
-        throw new Error(response?.error || "Failed to save domain")
-      }
-
-      const statusLabel =
-        response.status === "skipped" ? "Already saved" : "Saved"
-      setSaveDomainMessage(`${statusLabel}: ${response.domain}`)
-      setSaveDomainTarget("")
-    } catch (error) {
-      setSaveDomainMessage(
-        error instanceof Error ? error.message : String(error)
-      )
-    } finally {
-      setSaveDomainLoading(false)
-    }
-  }, [saveDomainTarget])
 
   return (
     <div style={contentStyle}>
@@ -129,61 +87,6 @@ export const BacklinksTab = ({
         </button>
 
         {backlinksError && <p style={errorStyle}>{backlinksError}</p>}
-      </section>
-
-      <section style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <h2
-          style={{
-            margin: 0,
-            fontSize: 18,
-            fontWeight: 600,
-            fontFamily: "system-ui, -apple-system, sans-serif"
-          }}>
-          Save Domain
-        </h2>
-        <p style={{ fontSize: 13, color: "#64748b", margin: 0 }}>
-          Save a domain to Link Manager default group.
-        </p>
-
-        <label style={labelStyle}>
-          <span>Domain</span>
-          <input
-            style={inputStyle}
-            type="text"
-            placeholder="Leave empty to save current page domain"
-            value={saveDomainTarget}
-            onChange={(e) => setSaveDomainTarget(e.target.value)}
-          />
-          <span style={{ fontSize: 11, color: "#64748b" }}>
-            Enter a domain or URL, or leave empty to save the current page.
-          </span>
-        </label>
-
-        <button
-          style={saveDomainLoading ? disabledButtonStyle : buttonStyle}
-          disabled={saveDomainLoading}
-          onClick={handleSaveDomain}>
-          {saveDomainLoading ? "Saving Domain..." : "Save Domain"}
-        </button>
-
-        {saveDomainMessage ? (
-          <p
-            style={
-              saveDomainMessage.startsWith("Saved") ||
-              saveDomainMessage.startsWith("Already")
-                ? {
-                    border: "1px solid #bbf7d0",
-                    backgroundColor: "#dcfce7",
-                    color: "#15803d",
-                    borderRadius: 6,
-                    padding: "10px 12px",
-                    fontSize: 12
-                  }
-                : errorStyle
-            }>
-            {saveDomainMessage}
-          </p>
-        ) : null}
       </section>
 
       {backlinksDomainMetrics && (

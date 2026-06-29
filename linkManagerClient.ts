@@ -35,6 +35,14 @@ type SaveDomainResult = {
   message?: string
 }
 
+type SaveKeywordResult = {
+  target: string
+  keyword: string
+  id?: string
+  status: "created" | "skipped" | "error"
+  message?: string
+}
+
 export type CheckLinksResponse = {
   total: number
   exists: number
@@ -64,6 +72,13 @@ export type SaveDomainsResponse = {
     failed: number
   } | null
   results: SaveDomainResult[]
+}
+
+export type SaveKeywordsResponse = {
+  success: boolean
+  saved: number
+  skipped: number
+  results: SaveKeywordResult[]
 }
 
 const normalizeApiBase = (apiBase?: string): string => {
@@ -173,6 +188,25 @@ export const saveDomain = async (
 
   if (!Array.isArray(data?.results)) {
     throw new Error("Unexpected Link Manager domain save response")
+  }
+
+  return data
+}
+
+export const saveKeyword = async (
+  keyword: string,
+  notes?: string
+): Promise<SaveKeywordsResponse> => {
+  const data = await fetchJson<SaveKeywordsResponse>("/api/keywords/save", {
+    keyword,
+    notes,
+    keywordGroup: "default",
+    source: "google-search",
+    tags: ["chrome", "google-search"]
+  })
+
+  if (!Array.isArray(data?.results)) {
+    throw new Error("Unexpected Link Manager keyword save response")
   }
 
   return data

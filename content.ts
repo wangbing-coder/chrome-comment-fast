@@ -117,6 +117,7 @@ type ContentMessage = GetPageContextRequest
 
 const SEARCH_DOMAIN_BUTTON_CLASS = "comment-fast-save-domain-button"
 const SEARCH_RESULT_CONTAINER_CLASS = "comment-fast-search-result-container"
+const SEARCH_KEYWORD_BUTTON_CLASS = "comment-fast-save-keyword-button"
 
 const isGoogleSearchPage = () => {
   return (
@@ -158,7 +159,7 @@ const saveDomainFromSearchResult = async (
   target: string,
   title?: string
 ) => {
-  const previousText = button.textContent || "+"
+  const previousText = button.textContent || "D+"
   button.disabled = true
   button.textContent = "..."
   button.dataset.state = "saving"
@@ -199,7 +200,7 @@ const buildSearchResultButton = (anchor: HTMLAnchorElement) => {
   const button = document.createElement("button")
   button.type = "button"
   button.className = SEARCH_DOMAIN_BUTTON_CLASS
-  button.textContent = "+"
+  button.textContent = "D+"
   button.title = "Save domain to Link Manager"
   button.setAttribute("aria-label", "Save domain to Link Manager")
   button.dataset.state = "idle"
@@ -215,6 +216,94 @@ const buildSearchResultButton = (anchor: HTMLAnchorElement) => {
   })
 
   return button
+}
+
+const getGoogleSearchKeyword = () => {
+  const fromUrl = new URLSearchParams(window.location.search).get("q")
+  const fromInput = document.querySelector<HTMLInputElement | HTMLTextAreaElement>(
+    'input[name="q"], textarea[name="q"]'
+  )?.value
+
+  return (fromUrl || fromInput || "").replace(/\s+/g, " ").trim()
+}
+
+const saveKeywordFromSearchPage = async (button: HTMLButtonElement) => {
+  const previousText = button.textContent || "K+"
+  const keyword = getGoogleSearchKeyword()
+
+  if (!keyword) {
+    button.textContent = "!"
+    button.dataset.state = "error"
+    button.title = "No search keyword found"
+    window.setTimeout(() => {
+      button.textContent = previousText
+      button.dataset.state = "idle"
+    }, 2200)
+    return
+  }
+
+  button.disabled = true
+  button.textContent = "..."
+  button.dataset.state = "saving"
+
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: "SAVE_KEYWORD",
+      payload: {
+        keyword,
+        notes: window.location.href
+      }
+    })
+
+    if (!response?.success) {
+      throw new Error(response?.error || "Failed")
+    }
+
+    button.textContent = "✓"
+    button.dataset.state = "saved"
+    button.title =
+      response.status === "skipped"
+        ? "Keyword already saved"
+        : "Saved keyword to Link Manager"
+  } catch (error) {
+    button.textContent = "!"
+    button.dataset.state = "error"
+    button.title = error instanceof Error ? error.message : String(error)
+
+    window.setTimeout(() => {
+      button.disabled = false
+      button.textContent = previousText
+      button.dataset.state = "idle"
+    }, 2200)
+  }
+}
+
+const injectSearchKeywordButton = () => {
+  if (!isGoogleSearchPage()) return
+  if (document.querySelector(`.${SEARCH_KEYWORD_BUTTON_CLASS}`)) return
+
+  const input = document.querySelector<HTMLInputElement | HTMLTextAreaElement>(
+    'input[name="q"], textarea[name="q"]'
+  )
+  const form = input?.closest<HTMLElement>('form[role="search"], form')
+  if (!form) return
+
+  form.style.position = form.style.position || "relative"
+
+  const button = document.createElement("button")
+  button.type = "button"
+  button.className = SEARCH_KEYWORD_BUTTON_CLASS
+  button.textContent = "K+"
+  button.title = "Save search keyword to Link Manager"
+  button.setAttribute("aria-label", "Save search keyword to Link Manager")
+  button.dataset.state = "idle"
+  button.addEventListener("click", (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    void saveKeywordFromSearchPage(button)
+  })
+
+  form.appendChild(button)
 }
 
 const injectSearchResultDomainButtons = () => {
@@ -253,20 +342,20 @@ const installSearchResultDomainButtons = () => {
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        width: 22px;
+        width: 30px;
         height: 22px;
-        min-width: 22px;
+        min-width: 30px;
         border: 1px solid #dadce0;
         background: #fff;
         color: #5f6368;
         border-radius: 999px;
         padding: 0;
         margin: 0;
-        font: 600 14px/1 Arial, sans-serif;
+        font: 600 11px/1 Arial, sans-serif;
         cursor: pointer;
         position: absolute;
         top: 18px;
-        right: -30px;
+        right: -38px;
         z-index: 2;
         opacity: 0.46;
         box-sizing: border-box;
@@ -296,14 +385,63 @@ const installSearchResultDomainButtons = () => {
         background: #fce8e6;
         color: #d93025;
       }
+      .${SEARCH_KEYWORD_BUTTON_CLASS} {
+        appearance: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        height: 24px;
+        min-width: 30px;
+        border: 1px solid #dadce0;
+        background: #fff;
+        color: #5f6368;
+        border-radius: 999px;
+        padding: 0 7px;
+        margin: 0;
+        font: 600 11px/1 Arial, sans-serif;
+        cursor: pointer;
+        position: absolute;
+        top: 50%;
+        right: -42px;
+        transform: translateY(-50%);
+        z-index: 2;
+        opacity: 0.6;
+        box-sizing: border-box;
+        box-shadow: none;
+      }
+      .${SEARCH_KEYWORD_BUTTON_CLASS}:hover {
+        border-color: #9aa0a6;
+        background: #f8fafd;
+        color: #202124;
+        opacity: 1;
+      }
+      .${SEARCH_KEYWORD_BUTTON_CLASS}[data-state="saving"] {
+        cursor: wait;
+        opacity: 0.72;
+      }
+      .${SEARCH_KEYWORD_BUTTON_CLASS}[data-state="saved"] {
+        border-color: #34a853;
+        background: #e6f4ea;
+        color: #188038;
+        cursor: default;
+      }
+      .${SEARCH_KEYWORD_BUTTON_CLASS}[data-state="error"] {
+        border-color: #d93025;
+        background: #fce8e6;
+        color: #d93025;
+      }
     `
     document.documentElement.appendChild(style)
   }
 
   injectSearchResultDomainButtons()
+  injectSearchKeywordButton()
 
   const observer = new MutationObserver(() => {
-    window.setTimeout(injectSearchResultDomainButtons, 100)
+    window.setTimeout(() => {
+      injectSearchResultDomainButtons()
+      injectSearchKeywordButton()
+    }, 100)
   })
   observer.observe(document.body, { childList: true, subtree: true })
 }

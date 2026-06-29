@@ -1,5 +1,5 @@
 import { DEBUG } from "./config"
-import { saveDomain } from "./linkManagerClient"
+import { saveDomain, saveKeyword } from "./linkManagerClient"
 
 type ArticleStructure = {
   mainTitle?: string
@@ -38,11 +38,20 @@ type SaveDomainRequest = {
   }
 }
 
+type SaveKeywordRequest = {
+  type: "SAVE_KEYWORD"
+  payload: {
+    keyword: string
+    notes?: string
+  }
+}
+
 type BackgroundMessage =
   | GenerateCommentRequest
   | FetchBacklinksRequest
   | GetCurrentTabRequest
   | SaveDomainRequest
+  | SaveKeywordRequest
 
 type OpenRouterResponse = {
   choices?: Array<{
@@ -413,6 +422,40 @@ chrome.runtime.onMessage.addListener(
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error)
           console.error("❌ Domain save error:", message)
+          sendResponse({ success: false, error: message })
+        }
+      })()
+      return true
+    }
+
+    if (message?.type === "SAVE_KEYWORD") {
+      ;(async () => {
+        try {
+          const keyword = message.payload?.keyword?.trim()
+          const notes = message.payload?.notes?.trim()
+
+          if (!keyword) {
+            sendResponse({ success: false, error: "Missing keyword" })
+            return
+          }
+
+          const data = await saveKeyword(keyword, notes)
+          const result = data.results?.[0]
+
+          if (!result || result.status === "error") {
+            throw new Error(result?.message || "Failed to save keyword")
+          }
+
+          sendResponse({
+            success: true,
+            keyword: result.keyword,
+            status: result.status,
+            saved: data.saved,
+            skipped: data.skipped
+          })
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          console.error("❌ Keyword save error:", message)
           sendResponse({ success: false, error: message })
         }
       })()

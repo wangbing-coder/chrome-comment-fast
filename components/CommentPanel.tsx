@@ -5,6 +5,7 @@ import { checkLinks, saveLinks } from "../linkManagerClient"
 import { BacklinksTab } from "./BacklinksTab"
 import { Header } from "./Header"
 import { HomeTab, type DomainInfo } from "./HomeTab"
+import { SaveTab } from "./SaveTab"
 import { SettingsTab } from "./SettingsTab"
 import { Sidebar, type TabType } from "./Sidebar"
 import { containerStyle } from "./styles"
@@ -465,6 +466,8 @@ const SidePanel = ({ onClose }: SidePanelProps = {}) => {
             onCheckBacklinks={handleCheckBacklinks}
             onSaveBacklink={handleSaveBacklink}
           />
+        ) : activeTab === "save" ? (
+          <SaveTab />
         ) : (
           <SettingsTab
             apiKey={apiKey}

@@ -1,6 +1,6 @@
 import { tabButtonStyle, activeTabButtonStyle } from "./styles"
 
-export type TabType = "home" | "backlinks" | "settings"
+export type TabType = "home" | "backlinks" | "save" | "settings"
 
 type SidebarProps = {
   activeTab: TabType
@@ -28,6 +28,11 @@ export const Sidebar = ({ activeTab, onTabChange }: SidebarProps) => {
         style={activeTab === "backlinks" ? activeTabButtonStyle : tabButtonStyle}
         onClick={() => onTabChange("backlinks")}>
         <span>Backlinks</span>
+      </button>
+      <button
+        style={activeTab === "save" ? activeTabButtonStyle : tabButtonStyle}
+        onClick={() => onTabChange("save")}>
+        <span>Save</span>
       </button>
       <button
         style={activeTab === "settings" ? activeTabButtonStyle : tabButtonStyle}

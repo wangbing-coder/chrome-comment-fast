@@ -41,10 +41,18 @@ export const SettingsTab = ({
   const domainsUrl = normalizedLinkManagerBase
     ? `${normalizedLinkManagerBase}/domains`
     : ""
+  const keywordsUrl = normalizedLinkManagerBase
+    ? `${normalizedLinkManagerBase}/keywords`
+    : ""
 
   const openDomainsPage = () => {
     if (!domainsUrl) return
     chrome.tabs.create({ url: domainsUrl })
+  }
+
+  const openKeywordsPage = () => {
+    if (!keywordsUrl) return
+    chrome.tabs.create({ url: keywordsUrl })
   }
 
   return (
@@ -135,15 +143,26 @@ export const SettingsTab = ({
           </span>
         </label>
 
-        <button
-          style={{
-            ...secondaryButtonStyle,
-            width: "100%"
-          }}
-          disabled={!domainsUrl}
-          onClick={openDomainsPage}>
-          Open Domains
-        </button>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <button
+            style={{
+              ...secondaryButtonStyle,
+              width: "100%"
+            }}
+            disabled={!domainsUrl}
+            onClick={openDomainsPage}>
+            Open Domains
+          </button>
+          <button
+            style={{
+              ...secondaryButtonStyle,
+              width: "100%"
+            }}
+            disabled={!keywordsUrl}
+            onClick={openKeywordsPage}>
+            Open Keywords
+          </button>
+        </div>
 
         <button style={buttonStyle} onClick={onSave}>
           Save Settings
