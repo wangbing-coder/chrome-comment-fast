@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react"
 
 import { DEBUG, DEFAULT_LINK_MANAGER_API_BASE } from "../config"
 import { checkLinks, saveLinks } from "../linkManagerClient"
+import { AutoCommitTab } from "./AutoCommitTab"
 import { BacklinksTab } from "./BacklinksTab"
 import { Header } from "./Header"
 import { HomeTab, type DomainInfo } from "./HomeTab"
@@ -41,6 +42,7 @@ const SidePanel = ({ onClose }: SidePanelProps = {}) => {
   const [linkManagerApiBase, setLinkManagerApiBase] = useState(
     DEFAULT_LINK_MANAGER_API_BASE
   )
+  const [autoCommitApiToken, setAutoCommitApiToken] = useState("")
   const [comment, setComment] = useState("")
   const [status, setStatus] = useState<GenerationStatus>("idle")
   const [error, setError] = useState<string | null>(null)
@@ -76,14 +78,16 @@ const SidePanel = ({ onClose }: SidePanelProps = {}) => {
         commentLength: savedLength,
         userDomains,
         capsolverApiKey: savedCapsolverKey,
-        linkManagerApiBase: savedLinkManagerApiBase
+        linkManagerApiBase: savedLinkManagerApiBase,
+        autoCommitApiToken: savedAutoCommitApiToken
       } = await chrome.storage.sync.get([
         "aiApiKey",
         "aiModel",
         "commentLength",
         "userDomains",
         "capsolverApiKey",
-        "linkManagerApiBase"
+        "linkManagerApiBase",
+        "autoCommitApiToken"
       ])
       if (aiApiKey) setApiKey(aiApiKey)
       if (aiModel) setModel(aiModel)
@@ -92,6 +96,9 @@ const SidePanel = ({ onClose }: SidePanelProps = {}) => {
       if (savedCapsolverKey) setCapsolverApiKey(savedCapsolverKey)
       if (savedLinkManagerApiBase) {
         setLinkManagerApiBase(savedLinkManagerApiBase)
+      }
+      if (savedAutoCommitApiToken) {
+        setAutoCommitApiToken(savedAutoCommitApiToken)
       }
     })()
   }, [])
@@ -128,12 +135,20 @@ const SidePanel = ({ onClose }: SidePanelProps = {}) => {
       aiModel: model.trim(),
       commentLength: commentLength,
       capsolverApiKey: capsolverApiKey.trim(),
-      linkManagerApiBase: normalizedLinkManagerApiBase
+      linkManagerApiBase: normalizedLinkManagerApiBase,
+      autoCommitApiToken: autoCommitApiToken.trim()
     })
     setLinkManagerApiBase(normalizedLinkManagerApiBase)
     setSaveMessage("Settings saved successfully")
     setTimeout(() => setSaveMessage(null), 3000)
-  }, [apiKey, model, commentLength, capsolverApiKey, linkManagerApiBase])
+  }, [
+    apiKey,
+    model,
+    commentLength,
+    capsolverApiKey,
+    linkManagerApiBase,
+    autoCommitApiToken
+  ])
 
   const handleGenerate = useCallback(async () => {
     const { aiApiKey, aiModel, commentLength } = await chrome.storage.sync.get([
@@ -466,6 +481,8 @@ const SidePanel = ({ onClose }: SidePanelProps = {}) => {
             onCheckBacklinks={handleCheckBacklinks}
             onSaveBacklink={handleSaveBacklink}
           />
+        ) : activeTab === "auto-commit" ? (
+          <AutoCommitTab onOpenSettings={() => setActiveTab("settings")} />
         ) : activeTab === "save" ? (
           <SaveTab />
         ) : (
@@ -475,12 +492,14 @@ const SidePanel = ({ onClose }: SidePanelProps = {}) => {
             commentLength={commentLength}
             capsolverApiKey={capsolverApiKey}
             linkManagerApiBase={linkManagerApiBase}
+            autoCommitApiToken={autoCommitApiToken}
             saveMessage={saveMessage}
             onApiKeyChange={setApiKey}
             onModelChange={setModel}
             onCommentLengthChange={setCommentLength}
             onCapsolverApiKeyChange={setCapsolverApiKey}
             onLinkManagerApiBaseChange={setLinkManagerApiBase}
+            onAutoCommitApiTokenChange={setAutoCommitApiToken}
             onSave={handleSaveSettings}
           />
         )}

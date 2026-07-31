@@ -1,3 +1,10 @@
+import {
+  selectAnchor,
+  urlsReferToSamePage,
+  waitForSuccessfulProbe,
+  type AutoCommitLink,
+  type AutoCommitSite
+} from "./autoCommit"
 import { DEBUG } from "./config"
 import { saveDomain, saveKeyword } from "./linkManagerClient"
 
@@ -46,12 +53,21 @@ type SaveKeywordRequest = {
   }
 }
 
+type StartCommentPreparationRequest = {
+  type: "START_COMMENT_PREPARATION"
+  payload: {
+    site: AutoCommitSite
+    links: AutoCommitLink[]
+  }
+}
+
 type BackgroundMessage =
   | GenerateCommentRequest
   | FetchBacklinksRequest
   | GetCurrentTabRequest
   | SaveDomainRequest
   | SaveKeywordRequest
+  | StartCommentPreparationRequest
 
 type OpenRouterResponse = {
   choices?: Array<{
@@ -304,8 +320,166 @@ const getBacklinks = async (
   return data
 }
 
+const generateComment = async ({
+  title,
+  url,
+  contentSnippet,
+  structure
+}: GenerateCommentRequest["payload"]) => {
+  const { aiApiKey, aiModel, commentLength } = await chrome.storage.sync.get([
+    "aiApiKey",
+    "aiModel",
+    "commentLength"
+  ])
+  if (!aiApiKey?.trim()) throw new Error("Missing API Key in settings")
+  if (!aiModel?.trim()) throw new Error("Missing AI Model in settings")
+
+  const lengthSetting = commentLength || "medium"
+  const response = await fetch(
+    "https://openrouter.ai/api/v1/chat/completions",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${aiApiKey}`,
+        "HTTP-Referer": url,
+        "X-Title": "Comment Fast"
+      },
+      body: JSON.stringify({
+        model: aiModel,
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are an experienced blog reader who writes insightful, substantive comments. Your comments reference specific content from the article and add genuine value through your perspective or questions."
+          },
+          {
+            role: "user",
+            content: buildSmartPrompt(
+              title,
+              contentSnippet,
+              structure,
+              lengthSetting
+            )
+          }
+        ],
+        max_tokens:
+          lengthSetting === "short"
+            ? 150
+            : lengthSetting === "medium"
+              ? 250
+              : 350,
+        temperature: 0.7
+      })
+    }
+  )
+
+  if (!response.ok) {
+    throw new Error(`OpenRouter error: ${await response.text()}`)
+  }
+
+  const data = (await response.json()) as OpenRouterResponse
+  const comment = data?.choices?.[0]?.message?.content?.trim()
+  if (!comment) throw new Error("No comment received from OpenRouter")
+  return comment
+}
+
+const waitForPageContext = (
+  tabId: number,
+  expectedUrl: string,
+  timeoutMs = 30000
+) =>
+  waitForSuccessfulProbe({
+    probe: async () => {
+      const context = await chrome.tabs.sendMessage(tabId, {
+        type: "GET_PAGE_CONTEXT"
+      })
+      if (!context?.success) {
+        throw new Error(context?.error || "Could not read page content")
+      }
+      if (!urlsReferToSamePage(context.payload?.url || "", expectedUrl)) {
+        throw new Error("The worker tab is still showing the previous page")
+      }
+      return context
+    },
+    timeoutMs,
+    intervalMs: 500,
+    timeoutMessage: "Page content did not become available"
+  })
+
+let autoCommitRunning = false
+
+const prepareCommentTabs = async (
+  payload: StartCommentPreparationRequest["payload"],
+  progressTabId?: number
+) => {
+  const links = payload.links.slice(0, 20)
+  const openedTabs: chrome.tabs.Tab[] = []
+  const preparedTabs: chrome.tabs.Tab[] = []
+
+  for (const [index, link] of links.entries()) {
+    let success = false
+    let errorMessage: string | undefined
+
+    try {
+      const anchorUsed = selectAnchor(payload.site.anchorTexts)
+      const tab = await chrome.tabs.create({ url: link.url, active: false })
+      if (!tab.id) throw new Error("Chrome did not create the article tab")
+      openedTabs.push(tab)
+
+      const context = await waitForPageContext(tab.id, link.url)
+      const comment = await generateComment(context.payload)
+      const prepared = await chrome.tabs.sendMessage(tab.id, {
+        type: "AUTO_COMMIT_FILL_ONLY",
+        payload: {
+          name: anchorUsed,
+          email: payload.site.email,
+          website: payload.site.website,
+          comment
+        }
+      })
+      if (!prepared?.success) {
+        throw new Error(prepared?.error || "Could not prepare the comment form")
+      }
+
+      success = true
+      preparedTabs.push(tab)
+    } catch (error) {
+      errorMessage = error instanceof Error ? error.message : String(error)
+    } finally {
+      const progressMessage = {
+        type: "COMMENT_PREPARATION_PROGRESS",
+        payload: {
+          completed: index + 1,
+          total: links.length,
+          linkId: link.id,
+          url: link.url,
+          success,
+          error: errorMessage
+        }
+      }
+      const progressRequest = progressTabId
+        ? chrome.tabs.sendMessage(progressTabId, progressMessage)
+        : chrome.runtime.sendMessage(progressMessage)
+      void progressRequest.catch(() => undefined)
+    }
+  }
+
+  const firstTab = preparedTabs[0] || openedTabs[0]
+  if (firstTab?.id) {
+    await chrome.tabs.update(firstTab.id, { active: true })
+    if (firstTab.windowId) {
+      await chrome.windows
+        .update(firstTab.windowId, { focused: true })
+        .catch(() => undefined)
+    }
+  }
+
+  return { completed: links.length, prepared: preparedTabs.length }
+}
+
 chrome.runtime.onMessage.addListener(
-  (message: BackgroundMessage, _sender, sendResponse) => {
+  (message: BackgroundMessage, sender, sendResponse) => {
     if (message?.type === "GET_CURRENT_TAB") {
       ;(async () => {
         try {
@@ -460,6 +634,51 @@ chrome.runtime.onMessage.addListener(
         }
       })()
       return true
+    }
+
+    if (message?.type === "START_COMMENT_PREPARATION") {
+      if (autoCommitRunning) {
+        sendResponse({
+          success: false,
+          error: "Comment preparation is already running"
+        })
+        return true
+      }
+      if (
+        !message.payload?.site?.id ||
+        !Array.isArray(message.payload?.links) ||
+        message.payload.links.length === 0
+      ) {
+        sendResponse({
+          success: false,
+          error: "Select an identity and at least one link"
+        })
+        return true
+      }
+
+      autoCommitRunning = true
+      sendResponse({
+        success: true,
+        accepted: true,
+        total: Math.min(message.payload.links.length, 20)
+      })
+      void prepareCommentTabs(message.payload, sender.tab?.id)
+        .catch((error) => {
+          const failureMessage = {
+            type: "COMMENT_PREPARATION_ERROR",
+            payload: {
+              error: error instanceof Error ? error.message : String(error)
+            }
+          }
+          const failureRequest = sender.tab?.id
+            ? chrome.tabs.sendMessage(sender.tab.id, failureMessage)
+            : chrome.runtime.sendMessage(failureMessage)
+          void failureRequest.catch(() => undefined)
+        })
+        .finally(() => {
+          autoCommitRunning = false
+        })
+      return false
     }
 
     if (message?.type !== "GENERATE_COMMENT") {

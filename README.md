@@ -1,33 +1,45 @@
-This is a [Plasmo extension](https://docs.plasmo.com/) project bootstrapped with [`plasmo init`](https://www.npmjs.com/package/plasmo).
+# Comment Fast
 
-## Getting Started
+Chrome MV3 extension for contextual comment generation, backlink checks, Link
+Manager saves, and assisted WordPress comment preparation.
 
-First, run the development server:
+## Development
 
 ```bash
+pnpm install
 pnpm dev
-# or
-npm run dev
 ```
 
-Open your browser and load the appropriate development build. For example, if you are developing for the chrome browser, using manifest v3, use: `build/chrome-mv3-dev`.
+Load `build/chrome-mv3-dev` as an unpacked extension from
+`chrome://extensions`.
 
-You can start editing the popup by modifying `popup.tsx`. It should auto-update as you make changes. To add an options page, simply add a `options.tsx` file to the root of the project, with a react component default exported. Likewise to add a content page, add a `content.ts` file to the root of the project, importing some module and do some logic, then reload the extension on your browser.
+## Comment Preparation
 
-For further guidance, [visit our Documentation](https://docs.plasmo.com/)
+Comment preparation opens selected WordPress articles in separate tabs,
+extracts their content, generates a contextual comment, fills the standard
+Name/Email/Website/Comment fields, and focuses the Comment input.
 
-## Making production build
+The extension never clicks the submit button. Review each prepared tab and
+submit the comment manually.
 
-Run the following:
+1. In Link Manager, create an active comment identity and queue External Links
+   from the Auto Commit page.
+2. In the extension Settings tab, configure:
+   - OpenRouter API key and model
+   - Link Manager API URL
+   - Auto Commit API token matching `AUTO_COMMIT_API_TOKEN` on Link Manager
+3. Open the Prepare tab, choose an identity and up to 20 links, then click
+   **Open & Fill**.
+
+The prepared tabs remain open. Preparation does not update the Link Manager
+submission status because only the user controls the final submission.
+
+## Verification
 
 ```bash
+pnpm test
+pnpm exec tsc --noEmit
 pnpm build
-# or
-npm run build
 ```
 
-This should create a production bundle for your extension, ready to be zipped and published to the stores.
-
-## Submit to the webstores
-
-The easiest way to deploy your Plasmo extension is to use the built-in [bpp](https://bpp.browser.market) GitHub action. Prior to using this action however, make sure to build your extension and upload the first version to the store to establish the basic credentials. Then, simply follow [this setup instruction](https://docs.plasmo.com/framework/workflows/submit) and you should be on your way for automated submission!
+The production unpacked extension is generated at `build/chrome-mv3-prod`.

@@ -2,6 +2,7 @@ import type { PlasmoCSConfig } from "plasmo"
 import React from "react"
 import { createRoot } from "react-dom/client"
 
+import { typeTextWithSignals } from "./autoCommit"
 import SidePanel from "./components/CommentPanel"
 import { DEBUG } from "./config"
 
@@ -113,7 +114,17 @@ type GetPageContextRequest = {
   type: "GET_PAGE_CONTEXT"
 }
 
-type ContentMessage = GetPageContextRequest
+type AutoCommitFillRequest = {
+  type: "AUTO_COMMIT_FILL_ONLY"
+  payload: {
+    name: string
+    email: string
+    website: string
+    comment: string
+  }
+}
+
+type ContentMessage = GetPageContextRequest | AutoCommitFillRequest
 
 const SEARCH_DOMAIN_BUTTON_CLASS = "comment-fast-save-domain-button"
 const SEARCH_RESULT_CONTAINER_CLASS = "comment-fast-search-result-container"
@@ -220,9 +231,9 @@ const buildSearchResultButton = (anchor: HTMLAnchorElement) => {
 
 const getGoogleSearchKeyword = () => {
   const fromUrl = new URLSearchParams(window.location.search).get("q")
-  const fromInput = document.querySelector<HTMLInputElement | HTMLTextAreaElement>(
-    'input[name="q"], textarea[name="q"]'
-  )?.value
+  const fromInput = document.querySelector<
+    HTMLInputElement | HTMLTextAreaElement
+  >('input[name="q"], textarea[name="q"]')?.value
 
   return (fromUrl || fromInput || "").replace(/\s+/g, " ").trim()
 }
@@ -498,6 +509,89 @@ const extractArticleStructure = () => {
   return structure
 }
 
+const commentSelectors = {
+  name: 'input[name="author"], input#author',
+  email: 'input[name="email"], input#email',
+  website: 'input[name="url"], input#url',
+  comment: 'textarea[name="comment"], textarea#comment'
+}
+
+const setNativeInputValue = (
+  element: HTMLInputElement | HTMLTextAreaElement,
+  value: string
+) => {
+  const prototype =
+    element instanceof HTMLTextAreaElement
+      ? HTMLTextAreaElement.prototype
+      : HTMLInputElement.prototype
+  const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set
+  setter?.call(element, value)
+}
+
+const typeInputValue = async (
+  element: HTMLInputElement | HTMLTextAreaElement,
+  value: string
+) => {
+  element.focus()
+  setNativeInputValue(element, "")
+  element.dispatchEvent(new Event("input", { bubbles: true }))
+
+  await typeTextWithSignals({
+    value,
+    emitKeyDown: (key) =>
+      element.dispatchEvent(
+        new KeyboardEvent("keydown", { key, bubbles: true })
+      ),
+    writeValue: (nextValue) => setNativeInputValue(element, nextValue),
+    emitInput: () =>
+      element.dispatchEvent(
+        new InputEvent("input", {
+          bubbles: true,
+          inputType: "insertText"
+        })
+      ),
+    emitKeyUp: (key) =>
+      element.dispatchEvent(new KeyboardEvent("keyup", { key, bubbles: true }))
+  })
+
+  element.dispatchEvent(new Event("change", { bubbles: true }))
+}
+
+const fillCommentForManualSubmission = async (
+  payload: AutoCommitFillRequest["payload"]
+) => {
+  const form = document.querySelector<HTMLFormElement>(
+    "form#commentform, form.comment-form"
+  )
+  if (!form) throw new Error("WordPress comment form not found")
+
+  const name = form.querySelector<HTMLInputElement>(commentSelectors.name)
+  const email = form.querySelector<HTMLInputElement>(commentSelectors.email)
+  const website = form.querySelector<HTMLInputElement>(commentSelectors.website)
+  const comment = form.querySelector<HTMLTextAreaElement>(
+    commentSelectors.comment
+  )
+  if (!name || !email || !website || !comment) {
+    throw new Error("Required WordPress comment fields not found")
+  }
+
+  await typeInputValue(name, payload.name)
+  await typeInputValue(email, payload.email)
+  await typeInputValue(website, payload.website)
+  await typeInputValue(comment, payload.comment)
+  if (
+    !name.checkValidity() ||
+    !email.checkValidity() ||
+    !website.checkValidity() ||
+    !comment.checkValidity()
+  ) {
+    throw new Error("One or more completed comment fields are invalid")
+  }
+
+  comment.scrollIntoView({ block: "center", behavior: "smooth" })
+  comment.focus()
+}
+
 // Log that content script is loaded
 if (DEBUG)
   console.log("✅ Comment Fast content script loaded on:", window.location.href)
@@ -560,6 +654,18 @@ chrome.runtime.onMessage.addListener(
       }
 
       // Return true to indicate we will send a response asynchronously
+      return true
+    }
+
+    if (message?.type === "AUTO_COMMIT_FILL_ONLY") {
+      void fillCommentForManualSubmission(message.payload)
+        .then(() => sendResponse({ success: true, prepared: true }))
+        .catch((error) =>
+          sendResponse({
+            success: false,
+            error: error instanceof Error ? error.message : String(error)
+          })
+        )
       return true
     }
 

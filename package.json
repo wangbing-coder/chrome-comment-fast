@@ -1,13 +1,14 @@
 {
   "name": "comment-fast",
   "displayName": "Comment Fast",
-  "version": "1.0.0",
+  "version": "1.0.4",
   "description": "AI-powered comment generator and backlinks checker. Generate contextual comments for blogs and analyze backlinks with Domain Rating.",
   "author": "brice94",
   "scripts": {
     "dev": "plasmo dev",
     "build": "plasmo build",
-    "package": "plasmo package"
+    "package": "plasmo package",
+    "test": "tsx --test tests/*.test.ts"
   },
   "dependencies": {
     "plasmo": "0.90.5",
@@ -21,6 +22,7 @@
     "@types/react": "18.2.48",
     "@types/react-dom": "18.2.18",
     "prettier": "3.2.4",
+    "tsx": "^4.23.1",
     "typescript": "5.3.3"
   },
   "manifest": {

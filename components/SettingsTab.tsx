@@ -14,12 +14,14 @@ type SettingsTabProps = {
   commentLength: string
   capsolverApiKey: string
   linkManagerApiBase: string
+  autoCommitApiToken: string
   saveMessage: string | null
   onApiKeyChange: (value: string) => void
   onModelChange: (value: string) => void
   onCommentLengthChange: (value: string) => void
   onCapsolverApiKeyChange: (value: string) => void
   onLinkManagerApiBaseChange: (value: string) => void
+  onAutoCommitApiTokenChange: (value: string) => void
   onSave: () => void
 }
 
@@ -29,15 +31,19 @@ export const SettingsTab = ({
   commentLength,
   capsolverApiKey,
   linkManagerApiBase,
+  autoCommitApiToken,
   saveMessage,
   onApiKeyChange,
   onModelChange,
   onCommentLengthChange,
   onCapsolverApiKeyChange,
   onLinkManagerApiBaseChange,
+  onAutoCommitApiTokenChange,
   onSave
 }: SettingsTabProps) => {
-  const normalizedLinkManagerBase = linkManagerApiBase.trim().replace(/\/+$/g, "")
+  const normalizedLinkManagerBase = linkManagerApiBase
+    .trim()
+    .replace(/\/+$/g, "")
   const domainsUrl = normalizedLinkManagerBase
     ? `${normalizedLinkManagerBase}/domains`
     : ""
@@ -143,7 +149,23 @@ export const SettingsTab = ({
           </span>
         </label>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+        <label style={labelStyle}>
+          <span>Link Manager API Token</span>
+          <input
+            style={inputStyle}
+            type="password"
+            placeholder="Shared Bearer token"
+            value={autoCommitApiToken}
+            onChange={(event) => onAutoCommitApiTokenChange(event.target.value)}
+          />
+          <span style={{ fontSize: 11, color: "#64748b" }}>
+            Used only to load comment identities and queued links from Link
+            Manager.
+          </span>
+        </label>
+
+        <div
+          style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
           <button
             style={{
               ...secondaryButtonStyle,
