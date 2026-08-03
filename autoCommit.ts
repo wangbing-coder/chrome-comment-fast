@@ -15,6 +15,20 @@ export type AutoCommitLink = {
   submitCount: number
 }
 
+export const addLinkAfterSuccessfulFill = async <T>({
+  fill,
+  addLink
+}: {
+  fill: () => Promise<{ success?: boolean; error?: string }>
+  addLink: () => Promise<T>
+}) => {
+  const fillResult = await fill()
+  if (!fillResult?.success) {
+    throw new Error(fillResult?.error || "Could not prepare the comment form")
+  }
+  return addLink()
+}
+
 export const selectAnchor = (
   anchorTexts: string[],
   random: () => number = Math.random

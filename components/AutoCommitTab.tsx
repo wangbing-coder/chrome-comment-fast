@@ -13,6 +13,16 @@ type Progress = {
   error?: string
 }
 
+type CurrentPage = {
+  url: string
+  domain: string
+}
+
+type CurrentPageResult = {
+  success: boolean
+  message: string
+}
+
 type AutoCommitTabProps = {
   onOpenSettings: () => void
 }
@@ -71,6 +81,10 @@ export const AutoCommitTab = ({ onOpenSettings }: AutoCommitTabProps) => {
   const [running, setRunning] = useState(false)
   const [error, setError] = useState("")
   const [progress, setProgress] = useState<Progress[]>([])
+  const [currentPage, setCurrentPage] = useState<CurrentPage | null>(null)
+  const [currentPageRunning, setCurrentPageRunning] = useState(false)
+  const [currentPageResult, setCurrentPageResult] =
+    useState<CurrentPageResult | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -97,6 +111,17 @@ export const AutoCommitTab = ({ onOpenSettings }: AutoCommitTabProps) => {
   useEffect(() => {
     void load()
   }, [load])
+
+  useEffect(() => {
+    void chrome.runtime
+      .sendMessage({ type: "GET_CURRENT_TAB" })
+      .then((response) => {
+        if (response?.success && response.url && response.domain) {
+          setCurrentPage({ url: response.url, domain: response.domain })
+        }
+      })
+      .catch(() => undefined)
+  }, [])
 
   useEffect(() => {
     const listener = (message: any) => {
@@ -144,6 +169,55 @@ export const AutoCommitTab = ({ onOpenSettings }: AutoCommitTabProps) => {
     } catch (runError) {
       setError(runError instanceof Error ? runError.message : String(runError))
       setRunning(false)
+    }
+  }
+
+  const prepareCurrentPage = async () => {
+    if (!selectedSite || !currentPage) return
+    setCurrentPageRunning(true)
+    setCurrentPageResult(null)
+    setError("")
+
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: "PREPARE_CURRENT_PAGE_AND_ADD",
+        payload: { site: selectedSite }
+      })
+      if (!response?.success) {
+        throw new Error(
+          response?.prepared
+            ? `Form filled, but Links was not updated: ${response?.error || "Link Manager request failed"}`
+            : response?.error || "Current page preparation failed"
+        )
+      }
+
+      const status = response.link?.status
+      const message =
+        status === "created"
+          ? "Filled and added to Links. Review and submit manually."
+          : status === "updated"
+            ? "Filled and updated the existing domain link. Review and submit manually."
+            : response.link?.message ||
+              "Filled successfully, but this domain was already submitted."
+      setCurrentPageResult({ success: true, message })
+      await load()
+      if (response.link?.id) {
+        setSelectedIds((current) => {
+          const next = new Set(current)
+          next.delete(response.link.id)
+          return next
+        })
+      }
+    } catch (prepareError) {
+      setCurrentPageResult({
+        success: false,
+        message:
+          prepareError instanceof Error
+            ? prepareError.message
+            : String(prepareError)
+      })
+    } finally {
+      setCurrentPageRunning(false)
     }
   }
 
@@ -260,6 +334,73 @@ export const AutoCommitTab = ({ onOpenSettings }: AutoCommitTabProps) => {
             ))}
           </select>
         </label>
+      </div>
+
+      <div style={{ ...cardStyle, padding: 14, display: "grid", gap: 10 }}>
+        <div>
+          <p
+            style={{
+              margin: 0,
+              color: colors.ink,
+              fontSize: 13,
+              fontWeight: 650
+            }}>
+            Current page
+          </p>
+          <p
+            style={{
+              margin: "3px 0 0",
+              overflow: "hidden",
+              color: colors.muted,
+              fontSize: 10,
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap"
+            }}>
+            {currentPage?.url || "Open the extension on an article page."}
+          </p>
+        </div>
+
+        <button
+          style={{
+            minHeight: 38,
+            border: `1px solid ${colors.primary}`,
+            borderRadius: 8,
+            background:
+              currentPageRunning || running || !selectedSite || !currentPage
+                ? colors.surface
+                : colors.primarySoft,
+            color:
+              currentPageRunning || running || !selectedSite || !currentPage
+                ? colors.subtle
+                : colors.primary,
+            fontSize: 11,
+            fontWeight: 700,
+            cursor:
+              currentPageRunning || running || !selectedSite || !currentPage
+                ? "not-allowed"
+                : "pointer"
+          }}
+          disabled={
+            currentPageRunning || running || !selectedSite || !currentPage
+          }
+          onClick={() => void prepareCurrentPage()}>
+          {currentPageRunning
+            ? "Filling current page..."
+            : "Fill & Add to Links"}
+        </button>
+
+        {currentPageResult ? (
+          <p
+            role="status"
+            style={{
+              margin: 0,
+              color: currentPageResult.success ? colors.success : colors.danger,
+              fontSize: 10,
+              lineHeight: 1.4
+            }}>
+            {currentPageResult.message}
+          </p>
+        ) : null}
       </div>
 
       <div style={cardStyle}>

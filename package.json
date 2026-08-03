@@ -1,7 +1,7 @@
 {
   "name": "comment-fast",
   "displayName": "Comment Fast",
-  "version": "1.0.4",
+  "version": "1.0.6",
   "description": "AI-powered comment generator and backlinks checker. Generate contextual comments for blogs and analyze backlinks with Domain Rating.",
   "author": "brice94",
   "scripts": {

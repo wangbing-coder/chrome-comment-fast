@@ -3,11 +3,78 @@ import { readFileSync } from "node:fs"
 import test from "node:test"
 
 import {
+  addLinkAfterSuccessfulFill,
   selectAnchor,
   typeTextWithSignals,
   urlsReferToSamePage,
   waitForSuccessfulProbe
 } from "../autoCommit"
+import {
+  fetchWithNetworkRetry,
+  parseLinkManagerResponse
+} from "../autoCommitClient"
+
+test("addLinkAfterSuccessfulFill saves only after the form was filled", async () => {
+  const calls: string[] = []
+  const result = await addLinkAfterSuccessfulFill({
+    fill: async () => {
+      calls.push("fill")
+      return { success: true, prepared: true }
+    },
+    addLink: async () => {
+      calls.push("add")
+      return { status: "created" as const, id: "link-1" }
+    }
+  })
+
+  assert.deepEqual(calls, ["fill", "add"])
+  assert.deepEqual(result, { status: "created", id: "link-1" })
+})
+
+test("addLinkAfterSuccessfulFill does not save a failed fill", async () => {
+  let addCalls = 0
+
+  await assert.rejects(
+    () =>
+      addLinkAfterSuccessfulFill({
+        fill: async () => ({ success: false, error: "form missing" }),
+        addLink: async () => {
+          addCalls += 1
+          return { status: "created" as const, id: "link-1" }
+        }
+      }),
+    /form missing/
+  )
+  assert.equal(addCalls, 0)
+})
+
+test("Link Manager HTML responses report an undeployed API route", () => {
+  assert.throws(
+    () =>
+      parseLinkManagerResponse(
+        "<!DOCTYPE html><html><body>Link Manager</body></html>",
+        "text/html; charset=utf-8"
+      ),
+    /backend API route may not be deployed/i
+  )
+})
+
+test("Link Manager retries one transient network failure", async () => {
+  let attempts = 0
+  const response = await fetchWithNetworkRetry(
+    async () => {
+      attempts += 1
+      if (attempts === 1) throw new TypeError("Failed to fetch")
+      return new Response('{"ok":true}', {
+        headers: { "content-type": "application/json" }
+      })
+    },
+    async () => undefined
+  )
+
+  assert.equal(attempts, 2)
+  assert.equal(response.status, 200)
+})
 
 test("selectAnchor uses the supplied random source", () => {
   assert.equal(
@@ -128,5 +195,9 @@ test("manual preparation never submits forms or reports a submission", () => {
   assert.doesNotMatch(contentSource, /submit\.click\(\)|form\.requestSubmit/)
   assert.doesNotMatch(backgroundSource, /reportAutoCommitSubmission/)
   assert.doesNotMatch(backgroundSource, /AUTO_COMMIT_FILL_AND_SUBMIT/)
+  assert.match(
+    backgroundSource,
+    /PREPARE_CURRENT_PAGE_AND_ADD[\s\S]*chrome\.tabs\.query\([\s\S]*active:\s*true/
+  )
   assert.doesNotMatch(clientSource, /\/submitted|reportAutoCommitSubmission/)
 })

@@ -31,6 +31,11 @@ submit the comment manually.
 3. Open the Prepare tab, choose an identity and up to 20 links, then click
    **Open & Fill**.
 
+To add the article already open in the active tab, choose an identity and click
+**Fill & Add to Links**. The extension adds or updates that domain in Link
+Manager only after all comment fields are filled successfully. You still review
+and submit the form manually.
+
 The prepared tabs remain open. Preparation does not update the Link Manager
 submission status because only the user controls the final submission.
 

@@ -1,10 +1,12 @@
 import {
+  addLinkAfterSuccessfulFill,
   selectAnchor,
   urlsReferToSamePage,
   waitForSuccessfulProbe,
   type AutoCommitLink,
   type AutoCommitSite
 } from "./autoCommit"
+import { addAutoCommitLink } from "./autoCommitClient"
 import { DEBUG } from "./config"
 import { saveDomain, saveKeyword } from "./linkManagerClient"
 
@@ -61,12 +63,20 @@ type StartCommentPreparationRequest = {
   }
 }
 
+type PrepareCurrentPageRequest = {
+  type: "PREPARE_CURRENT_PAGE_AND_ADD"
+  payload: {
+    site: AutoCommitSite
+  }
+}
+
 type BackgroundMessage =
   | GenerateCommentRequest
   | FetchBacklinksRequest
   | GetCurrentTabRequest
   | SaveDomainRequest
   | SaveKeywordRequest
+  | PrepareCurrentPageRequest
   | StartCommentPreparationRequest
 
 type OpenRouterResponse = {
@@ -679,6 +689,74 @@ chrome.runtime.onMessage.addListener(
           autoCommitRunning = false
         })
       return false
+    }
+
+    if (message?.type === "PREPARE_CURRENT_PAGE_AND_ADD") {
+      if (autoCommitRunning) {
+        sendResponse({
+          success: false,
+          error: "Comment preparation is already running"
+        })
+        return true
+      }
+
+      if (!message.payload?.site?.id) {
+        sendResponse({
+          success: false,
+          error: "Open the extension on an article page and select a domain"
+        })
+        return true
+      }
+
+      autoCommitRunning = true
+      ;(async () => {
+        let prepared = false
+        try {
+          const [tab] = await chrome.tabs.query({
+            active: true,
+            lastFocusedWindow: true
+          })
+          if (!tab?.id || !tab.url) {
+            throw new Error("No active article tab found")
+          }
+
+          const tabId = tab.id
+          const tabUrl = tab.url
+          const context = await waitForPageContext(tabId, tabUrl)
+          const anchorUsed = selectAnchor(message.payload.site.anchorTexts)
+          const comment = await generateComment(context.payload)
+          const link = await addLinkAfterSuccessfulFill({
+            fill: () =>
+              chrome.tabs
+                .sendMessage(tabId, {
+                  type: "AUTO_COMMIT_FILL_ONLY",
+                  payload: {
+                    name: anchorUsed,
+                    email: message.payload.site.email,
+                    website: message.payload.site.website,
+                    comment
+                  }
+                })
+                .then((result) => {
+                  prepared = Boolean(result?.success)
+                  return result
+                }),
+            addLink: () =>
+              addAutoCommitLink(context.payload.url, context.payload.title)
+          })
+
+          sendResponse({ success: true, prepared: true, link })
+        } catch (error) {
+          sendResponse({
+            success: false,
+            prepared,
+            error: error instanceof Error ? error.message : String(error)
+          })
+        } finally {
+          autoCommitRunning = false
+        }
+      })()
+      return true
     }
 
     if (message?.type !== "GENERATE_COMMENT") {
