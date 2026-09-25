@@ -52,6 +52,24 @@ export const HomeTab = ({
   const [newDomainUrl, setNewDomainUrl] = useState("")
   const [domainLoading, setDomainLoading] = useState(false)
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
+  const [tabUrlsStatus, setTabUrlsStatus] = useState("")
+
+  const handleCopyOpenTabUrls = useCallback(async () => {
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: "GET_OPEN_TAB_URLS"
+      })
+      if (!response?.success) {
+        throw new Error(response?.error || "Failed to get tabs")
+      }
+      const urls: string[] = response.urls || []
+      onCopyToClipboard(urls.join("\n"), "Tab URLs")
+      setTabUrlsStatus(`Copied ${urls.length} URLs`)
+    } catch (err) {
+      setTabUrlsStatus(err instanceof Error ? err.message : String(err))
+    }
+    setTimeout(() => setTabUrlsStatus(""), 2000)
+  }, [onCopyToClipboard])
 
   const isGenerating = status === "loading"
 
@@ -183,6 +201,16 @@ export const HomeTab = ({
           disabled={isGenerating}
           onClick={onGenerate}>
           {buttonLabel}
+        </button>
+        <button
+          style={{
+            ...secondaryButtonStyle,
+            backgroundColor: tabUrlsStatus ? "#10b981" : "#f1f5f9",
+            color: tabUrlsStatus ? "white" : "#334155",
+            borderColor: tabUrlsStatus ? "#10b981" : "#cbd5e1"
+          }}
+          onClick={handleCopyOpenTabUrls}>
+          {tabUrlsStatus || "Copy Open Tab URLs"}
         </button>
       </section>
 

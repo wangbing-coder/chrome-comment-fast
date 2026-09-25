@@ -39,6 +39,10 @@ type GetCurrentTabRequest = {
   type: "GET_CURRENT_TAB"
 }
 
+type GetOpenTabUrlsRequest = {
+  type: "GET_OPEN_TAB_URLS"
+}
+
 type SaveDomainRequest = {
   type: "SAVE_DOMAIN"
   payload: {
@@ -74,6 +78,7 @@ type BackgroundMessage =
   | GenerateCommentRequest
   | FetchBacklinksRequest
   | GetCurrentTabRequest
+  | GetOpenTabUrlsRequest
   | SaveDomainRequest
   | SaveKeywordRequest
   | PrepareCurrentPageRequest
@@ -503,6 +508,28 @@ chrome.runtime.onMessage.addListener(
           } else {
             sendResponse({ success: false, error: "No active tab found" })
           }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          sendResponse({ success: false, error: message })
+        }
+      })()
+      return true
+    }
+
+    if (message?.type === "GET_OPEN_TAB_URLS") {
+      ;(async () => {
+        try {
+          const tabs = sender.tab?.windowId
+            ? await chrome.tabs.query({ windowId: sender.tab.windowId })
+            : await chrome.tabs.query({ lastFocusedWindow: true })
+          const urls = Array.from(
+            new Set(
+              tabs
+                .map((tab) => tab.url || "")
+                .filter((url) => /^https?:\/\//i.test(url))
+            )
+          )
+          sendResponse({ success: true, urls })
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error)
           sendResponse({ success: false, error: message })
