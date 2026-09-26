@@ -1,7 +1,10 @@
 import {
   DEFAULT_LINK_MANAGER_API_BASE,
+  DOMAIN_AGES_BATCH_SIZE,
+  LINK_MANAGER_COMMENT_FAST_KEY,
   LINK_MANAGER_REQUEST_TIMEOUT_MS
 } from "./config"
+import { toRegistrableDomain } from "./pageDomains"
 
 type CheckResult = {
   url: string
@@ -81,6 +84,20 @@ export type SaveKeywordsResponse = {
   results: SaveKeywordResult[]
 }
 
+export type DomainAgeResult = {
+  domain: string
+  registeredAt: string | null
+  expiresAt: string | null
+  registrar: string | null
+  source: "saved" | "cache" | "rdap" | "error"
+  error?: string
+}
+
+export type DomainAgesResponse = {
+  total: number
+  results: DomainAgeResult[]
+}
+
 const normalizeApiBase = (apiBase?: string): string => {
   const value = apiBase?.trim() || DEFAULT_LINK_MANAGER_API_BASE
   return value.replace(/\/+$/g, "")
@@ -104,7 +121,11 @@ const parseJson = (text: string): any => {
   }
 }
 
-const fetchJson = async <T>(path: string, payload: unknown): Promise<T> => {
+const fetchJson = async <T>(
+  path: string,
+  payload: unknown,
+  extraHeaders: Record<string, string> = {}
+): Promise<T> => {
   const controller = new AbortController()
   const timeoutId = setTimeout(
     () => controller.abort(),
@@ -116,7 +137,8 @@ const fetchJson = async <T>(path: string, payload: unknown): Promise<T> => {
     const response = await fetch(`${apiBase}${path}`, {
       method: "POST",
       headers: {
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        ...extraHeaders
       },
       body: JSON.stringify(payload),
       signal: controller.signal
@@ -207,6 +229,33 @@ export const saveKeyword = async (
 
   if (!Array.isArray(data?.results)) {
     throw new Error("Unexpected Link Manager keyword save response")
+  }
+
+  return data
+}
+
+export const lookupDomainAges = async (
+  domains: string[]
+): Promise<DomainAgesResponse> => {
+  const valid = domains.map(toRegistrableDomain).filter(Boolean) as string[]
+  if (
+    valid.length === 0 ||
+    valid.length !== domains.length ||
+    valid.length > DOMAIN_AGES_BATCH_SIZE
+  ) {
+    throw new Error(
+      `Expected 1-${DOMAIN_AGES_BATCH_SIZE} registrable domains per request`
+    )
+  }
+
+  const data = await fetchJson<DomainAgesResponse>(
+    "/api/external/domain-ages",
+    { domains: valid },
+    { "X-Comment-Fast-Key": LINK_MANAGER_COMMENT_FAST_KEY }
+  )
+
+  if (!Array.isArray(data?.results)) {
+    throw new Error("Unexpected Link Manager domain ages response")
   }
 
   return data

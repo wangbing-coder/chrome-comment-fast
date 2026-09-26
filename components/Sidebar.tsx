@@ -1,6 +1,12 @@
 import type { ReactNode } from "react"
 
-export type TabType = "home" | "backlinks" | "auto-commit" | "save" | "settings"
+export type TabType =
+  | "home"
+  | "backlinks"
+  | "domains"
+  | "auto-commit"
+  | "save"
+  | "settings"
 
 type SidebarProps = {
   activeTab: TabType
@@ -39,6 +45,18 @@ const tabs: Array<{ id: TabType; label: string; icon: ReactNode }> = [
       <Icon>
         <path d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1.1 1.1" />
         <path d="M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1.1-1.1" />
+      </Icon>
+    )
+  },
+  {
+    id: "domains",
+    label: "Domains",
+    icon: (
+      <Icon>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M3 12h18" />
+        <path d="M12 3a14 14 0 0 1 0 18" />
+        <path d="M12 3a14 14 0 0 0 0 18" />
       </Icon>
     )
   },

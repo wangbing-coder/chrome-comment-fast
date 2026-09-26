@@ -58,9 +58,12 @@ Comment Fast connects to third-party APIs only when you explicitly use certain f
 
 ### 4. Configured Link Manager
 
-- **Purpose**: Check/save links and load comment identities and queued links
-- **When Used**: When Link Manager or comment preparation features are used
-- **Data Sent**: URLs and link metadata
+- **Purpose**: Check/save links, load comment identities and queued links, and
+  look up domain registration dates
+- **When Used**: When Link Manager, comment preparation, or Page Domains
+  features are used
+- **Data Sent**: URLs and link metadata; for Page Domains, only the registrable
+  domain names linked on the current page (no page content or anchor text)
 - **Your Control**: The server URL and Auto Commit token are configured in Settings
 
 ### 5. Target comment websites

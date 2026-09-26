@@ -1,7 +1,7 @@
 {
   "name": "comment-fast",
   "displayName": "Comment Fast",
-  "version": "1.0.7",
+  "version": "1.0.13",
   "description": "AI-powered comment generator and backlinks checker. Generate contextual comments for blogs and analyze backlinks with Domain Rating.",
   "author": "brice94",
   "scripts": {
@@ -13,7 +13,8 @@
   "dependencies": {
     "plasmo": "0.90.5",
     "react": "18.2.0",
-    "react-dom": "18.2.0"
+    "react-dom": "18.2.0",
+    "tldts": "^7.4.15"
   },
   "devDependencies": {
     "@ianvs/prettier-plugin-sort-imports": "4.1.1",

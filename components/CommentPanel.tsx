@@ -4,6 +4,7 @@ import { DEBUG, DEFAULT_LINK_MANAGER_API_BASE } from "../config"
 import { checkLinks, saveLinks } from "../linkManagerClient"
 import { AutoCommitTab } from "./AutoCommitTab"
 import { BacklinksTab } from "./BacklinksTab"
+import { DomainsTab } from "./DomainsTab"
 import { Header } from "./Header"
 import { HomeTab, type DomainInfo } from "./HomeTab"
 import { SaveTab } from "./SaveTab"
@@ -481,6 +482,8 @@ const SidePanel = ({ onClose }: SidePanelProps = {}) => {
             onCheckBacklinks={handleCheckBacklinks}
             onSaveBacklink={handleSaveBacklink}
           />
+        ) : activeTab === "domains" ? (
+          <DomainsTab />
         ) : activeTab === "auto-commit" ? (
           <AutoCommitTab onOpenSettings={() => setActiveTab("settings")} />
         ) : activeTab === "save" ? (

@@ -8,7 +8,7 @@ import {
 } from "./autoCommit"
 import { addAutoCommitLink } from "./autoCommitClient"
 import { DEBUG } from "./config"
-import { saveDomain, saveKeyword } from "./linkManagerClient"
+import { lookupDomainAges, saveDomain, saveKeyword } from "./linkManagerClient"
 
 type ArticleStructure = {
   mainTitle?: string
@@ -59,6 +59,13 @@ type SaveKeywordRequest = {
   }
 }
 
+type LookupDomainAgesRequest = {
+  type: "LOOKUP_DOMAIN_AGES"
+  payload: {
+    domains: string[]
+  }
+}
+
 type StartCommentPreparationRequest = {
   type: "START_COMMENT_PREPARATION"
   payload: {
@@ -81,6 +88,7 @@ type BackgroundMessage =
   | GetOpenTabUrlsRequest
   | SaveDomainRequest
   | SaveKeywordRequest
+  | LookupDomainAgesRequest
   | PrepareCurrentPageRequest
   | StartCommentPreparationRequest
 
@@ -667,6 +675,25 @@ chrome.runtime.onMessage.addListener(
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error)
           console.error("❌ Keyword save error:", message)
+          sendResponse({ success: false, error: message })
+        }
+      })()
+      return true
+    }
+
+    if (message?.type === "LOOKUP_DOMAIN_AGES") {
+      ;(async () => {
+        try {
+          const domains = message.payload?.domains
+          if (!Array.isArray(domains)) {
+            sendResponse({ success: false, error: "Missing domains" })
+            return
+          }
+          const data = await lookupDomainAges(domains.map(String))
+          sendResponse({ success: true, results: data.results })
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          console.error("❌ Domain ages lookup error:", message)
           sendResponse({ success: false, error: message })
         }
       })()
