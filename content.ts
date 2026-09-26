@@ -71,6 +71,8 @@ const createFloatingPanel = async () => {
       overflow: hidden;
       direction: ltr;
       text-align: left;
+      /* Dark pages (meta color-scheme: dark) would otherwise darken native form controls. */
+      color-scheme: light;
     }
     
     #root {

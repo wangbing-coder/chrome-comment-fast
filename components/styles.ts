@@ -79,7 +79,9 @@ export const inputStyle: React.CSSProperties = {
   borderRadius: 6,
   padding: "10px 12px",
   fontSize: 13,
-  outline: "none"
+  outline: "none",
+  backgroundColor: "#ffffff",
+  color: "#1f2933"
 }
 
 export const buttonStyle: React.CSSProperties = {

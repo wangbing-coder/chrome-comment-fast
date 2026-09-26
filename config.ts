@@ -21,7 +21,7 @@ export const DEBUG = false
  * Extension version
  * This should match the version in package.json
  */
-export const VERSION = "1.0.13"
+export const VERSION = "1.0.14"
 
 /**
  * Link Manager backend used by the backlinks checker.
